@@ -139,6 +139,8 @@ cp -f "$HERE/opencode" "$P/bin/opencode.new" && chmod 700 "$P/bin/opencode.new"
 cp -f "$HERE/lib/libopentui.so" "$P/lib/libopentui.so"
 cp -f "$HERE/lib/opencode/libopencode-crhandler.so" "$P/lib/opencode/"
 grep -q 'lib/opencode' "$HOME/.bashrc" 2>/dev/null || echo "export LD_LIBRARY_PATH=\"$P/lib/opencode:\$LD_LIBRARY_PATH\"" >> "$HOME/.bashrc"
+grep -q 'OPENTUI_LIB_PATH' "$HOME/.bashrc" 2>/dev/null || echo "export OPENTUI_LIB_PATH=\"$P/lib/libopentui.so\"" >> "$HOME/.bashrc"
+export OPENTUI_LIB_PATH="$P/lib/libopentui.so"
 if OPENCODE_LIB_PATH= "$P/bin/opencode.new" --version >/dev/null 2>&1; then
   mv -f "$P/bin/opencode.new" "$P/bin/opencode"
   echo "OK: $(OPENCODE_LIB_PATH= "$P/bin/opencode" --version 2>/dev/null | head -1)"
