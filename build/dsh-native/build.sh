@@ -74,7 +74,7 @@ cat > "$STAGE/package/bin/dsh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
-export PATH="$ROOT/node_modules/.bin:$PATH"
+export PATH="$ROOT/bin:$ROOT/node_modules/.bin:$PATH"
 exec node --expose-internals "$ROOT/node_modules/@deepseek-ai/dsh/lib/bin.js" "$@"
 EOF
 chmod 755 "$STAGE/package/bin/dsh"

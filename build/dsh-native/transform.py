@@ -98,41 +98,10 @@ edit(p, f, "workspace archive without sessionKnown")
 # ------------------------------------------------------------------- sandbox local
 p = find_one("**/@deepseek-ai/dsh-sandbox-local/lib/index.js")
 def f(s):
-    proot = '''/**
-* proot profile args: ptrace-based binds, no CLONE_NEWUSER (works on Android).
-*/
-function prootProfileArgs(policy) {
-\tconst args = ["-b", "/:/", "-b", "/dev:/dev", "-b", "/proc:/proc"];
-\tif (policy.mode === "workspace-write") {
-\t\tconst termuxTmp = process.env.PREFIX ? process.env.PREFIX + "/tmp" : "''' + TERMUX_PREFIX + '''/tmp";
-\t\targs.push("-b", termuxTmp + ":/tmp");
-\t\targs.push("-b", policy.workspaceRoot + ":" + policy.workspaceRoot);
-\t}
-\treturn args;
-}
-'''
-    s = sub(s, '/** Probe whether `bwrap` can create the profile; the provider caches the bounded result. */',
-            proot + '/** Probe whether `bwrap` can create the profile; the provider caches the bounded result. */')
-    probe = '''/** Probe whether `proot` works (Android/Termux fallback). */
-function defaultProbeProot(timeoutMs) {
-\treturn spawnSync("proot", ["-b", "/:/", "-b", "/dev:/dev", "-b", "/proc:/proc", "true"], {
-\t\ttimeout: timeoutMs,
-\t\tstdio: "ignore"
-\t}).status === 0;
-}
-'''
-    s = sub(s, '/**\n* Functional Seatbelt probe:', probe + '/**\n* Functional Seatbelt probe:')
     s = sub(s, 'const PLATFORM_CHAINS = {\n\tlinux: ["bwrap", "landlock"],',
-            'const PLATFORM_CHAINS = {\n\tlinux: ["bwrap", "landlock"],\n\tandroid: ["proot", "bwrap", "landlock"],')
-    s = sub(s, '\tbwrap: ["read-only file system"],', '\tbwrap: ["read-only file system"],\n\tproot: ["permission denied"],')
-    s = sub(s, '\tbwrap: [{ fatalSignatures: ["bwrap: "] }],',
-            '\tbwrap: [{ fatalSignatures: ["bwrap: "] }],\n\tproot: [{ fatalSignatures: ["proot fatal: "] }],')
-    s = sub(s, '\t\t\tcase "bwrap": return ["bwrap", ...bwrapProfileArgs(policy)];',
-            '\t\t\tcase "proot": return ["proot", ...prootProfileArgs(policy)];\n\t\t\tcase "bwrap": return ["bwrap", ...bwrapProfileArgs(policy)];')
-    s = sub(s, '\t\t\tcase "bwrap": return (this.internals.probeBwrap',
-            '\t\t\tcase "proot": return (this.internals.probeProot ?? (() => defaultProbeProot(this.probeTimeoutMs)))() ? "partial" : "unusable";\n\t\t\tcase "bwrap": return (this.internals.probeBwrap')
+            'const PLATFORM_CHAINS = {\n\tlinux: ["bwrap", "landlock"],\n\tandroid: ["bwrap", "landlock"],')
     return s
-edit(p, f, "sandbox-local proot chain")
+edit(p, f, "sandbox-local native abwrap chain")
 
 # -------------------------------------------------------------------- ripgrep util
 p = find_one("**/@deepseek-ai/dsh-util-ripgrep/lib/index.js")
