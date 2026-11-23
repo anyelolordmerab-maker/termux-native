@@ -254,10 +254,30 @@ def patch_index(s):
 
 patch(idx, patch_index, "pty socket dir + selftest hook")
 
+def find_pkg(name):
+    pat = os.path.join(OC, "node_modules", "**", name, "package.json")
+    try:
+        hits = glob.glob(pat, recursive=True, include_hidden=True)
+    except TypeError:
+        hits = glob.glob(pat, recursive=True)
+    if not hits:
+        die(f"cannot find package {name}")
+    return os.path.dirname(sorted(hits, key=len)[0])
+
+
 _selftest_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selftest.ts")
 _selftest_dst = os.path.join(OC, "packages/cli/src/selftest.ts")
-shutil.copy2(_selftest_src, _selftest_dst)
-print("PLANT selftest.ts", flush=True)
+_base = os.path.join(OC, "packages/cli/src")
+_t = read(_selftest_src)
+for _spec, _pkg in (
+    ("bun-pty", "bun-pty"),
+    ("@parcel/watcher", "@parcel/watcher-android-arm64"),
+    ("@ff-labs/fff-bun", "@ff-labs/fff-bun"),
+):
+    _rel = os.path.relpath(find_pkg(_pkg), _base)
+    _t = _t.replace(f'from "{_spec}"', f'from "{_rel}"')
+write(_selftest_dst, _t)
+print("PLANT selftest.ts (resolving native packages to real dirs)", flush=True)
 
 # ------------------------------------------------------------------ plant
 def roots():
