@@ -28,27 +28,9 @@ npm install --ignore-scripts --no-audit --no-fund --engine-strict=false >/dev/nu
 # fallback WASM de sharp (nativo x64 del runner no sirve en Android)
 npm install @img/sharp-wasm32 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
 
-# 3) parches Android desde el repo de referencia
-echo "==> [3/7] applying Android patches"
-apply_all() {
-  local patch="$1" pkg="$2" n=0
-  while IFS= read -r dir; do
-    if (cd "$dir" && patch -p1 --forward --fuzz=3 < "$patch" >/dev/null 2>&1); then
-      echo "    OK $(basename "$patch") -> ${dir#$STAGE/package/node_modules/}"
-      n=$((n+1))
-    fi
-  done < <(find "$STAGE/package/node_modules" -type d -path "*/@deepseek-ai/$pkg" -print)
-  echo "    applied $n copies of $(basename "$patch")"
-}
-apply_all "$PATCHES/01-terminal-bash-android-shell.patch" dsh-terminal-bash
-apply_all "$PATCHES/02-session-persistence-link-rename.patch" dsh-session-persistence-jsonl
-apply_all "$PATCHES/03-subprocess-local-android.patch" dsh-subprocess-local
-apply_all "$PATCHES/04-host-apiproxy-termux-open-index.patch" dsh-host-apiproxy
-apply_all "$PATCHES/04-host-apiproxy-termux-open-opener.patch" dsh-host-apiproxy
-apply_all "$PATCHES/05-host-directory-picker-native-android.patch" dsh-host-directory-picker-native
-apply_all "$PATCHES/06-workspace-archive-skip-session-known-check.patch" dsh-workspace
-apply_all "$PATCHES/07-sandbox-local-proot-runner.patch" dsh-sandbox-local
-apply_all "$PATCHES/08-dsh-tool-fs-search-android-rg.patch" dsh-tool-fs-search
+# 3) transformacion semantica Android (las fuentes rc.5 cambiaron vs rc.1)
+echo "==> [3/7] applying Android transformations"
+STAGE="$STAGE" python3 "$ROOT/transform.py"
 
 # 4) nativos bionic/aarch64 desde el release de referencia (N-API ABI-stable)
 echo "==> [4/7] prebuilt native modules"
@@ -87,6 +69,7 @@ fi
 
 # 7) launcher + metadata + pack
 echo "==> [7/7] launcher, metadata, package"
+mkdir -p "$STAGE/package/bin"
 cat > "$STAGE/package/bin/dsh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail

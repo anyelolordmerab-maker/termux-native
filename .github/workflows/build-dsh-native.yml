@@ -69,7 +69,8 @@ jobs:
           done
           echo "=== patches ==="
           grep -Rq "prootProfileArgs" check/package/node_modules/@deepseek-ai/dsh-sandbox-local && echo "PASS patch07 proot"
-          grep -Rq "ripgrep-android-arm64" check/package/node_modules/@deepseek-ai/dsh-tool-fs-search && echo "PASS patch08 rg"
+          grep -Rq 'process.platform === "android"' check/package/node_modules/@deepseek-ai/dsh-util-ripgrep && echo "PASS transform rg android"
+          grep -Rq 'process.platform === "android"' check/package/node_modules/@deepseek-ai/dsh-terminal-bash && echo "PASS transform terminal android"
           grep -Rq "android-base" check/package/bin/bwrap && echo "PASS abwrap wrapper"
           node -e 'const j=require("./check/package/package.json");console.log("VERSION",j.name,j.version);if(j.name!=="dsh-termux")process.exit(1)'
           echo NATIVE_DSH_VALIDATION_OK
