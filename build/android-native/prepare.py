@@ -269,13 +269,13 @@ _selftest_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfte
 _selftest_dst = os.path.join(OC, "packages/cli/src/selftest.ts")
 _base = os.path.join(OC, "packages/cli/src")
 _t = read(_selftest_src)
-for _spec, _pkg in (
-    ("bun-pty", "bun-pty"),
-    ("@parcel/watcher", "@parcel/watcher-android-arm64"),
-    ("@ff-labs/fff-bun", "@ff-labs/fff-bun"),
+for _ph, _pkg in (
+    ("__BP__", "bun-pty"),
+    ("__PW__", "@parcel/watcher-android-arm64"),
+    ("__FFF__", "@ff-labs/fff-bun"),
 ):
     _rel = os.path.relpath(find_pkg(_pkg), _base)
-    _t = _t.replace(f'from "{_spec}"', f'from "{_rel}"')
+    _t = _t.replace(_ph, _rel)
 write(_selftest_dst, _t)
 print("PLANT selftest.ts (resolving native packages to real dirs)", flush=True)
 

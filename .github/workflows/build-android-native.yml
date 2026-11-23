@@ -217,6 +217,8 @@ jobs:
           sudo mkdir -p /system/bin /system/lib64 /linkerconfig
           sudo cp "$LINKER" /system/bin/linker64
           sudo cp -a "$LIBDIR"/. /system/lib64/ || true
+          # copia TODAS las librerias del rootfs (liblog.so, libc++, etc.)
+          sudo find bionic -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -n {} /system/lib64/ \; 2>/dev/null || true
           sudo chmod 755 /system/bin/linker64
           sudo mkdir -p /data && sudo chmod 777 /data
           ls -l /system/bin/linker64
