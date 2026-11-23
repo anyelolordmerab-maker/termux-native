@@ -76,6 +76,20 @@ for c in chunks:
 print('FFI chunks patched',n)
 PYF
 
+# 5b) fix platform android->linux en chunks (getCurrentNodeAssetTarget)
+say "5b fix platform"
+python3 - <<'PYP' || { say "FATAL platform"; exit 1; }
+import glob
+base='/content/oc/node_modules/.bun/@opentui+core@0.8.4+eff4d38d6a4a2cd9/node_modules/@opentui/core'
+n=0
+for f in glob.glob(base+'/chunk-*.js'):
+    s=open(f,encoding='utf-8',errors='replace').read()
+    if 'platform: process.platform' in s:
+        s=s.replace('platform: process.platform','platform: "linux"')
+        open(f,'w',encoding='utf-8').write(s); n+=1
+print('PLATFORM chunks patched',n)
+PYP
+
 # 6) build embebido
 say "6 bun --compile embebido (~6-8 min)"
 cd $OC/packages/cli || exit 1
