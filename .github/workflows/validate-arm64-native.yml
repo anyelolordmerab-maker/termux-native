@@ -1,9 +1,8 @@
 name: validate-arm64-native
 
 # Prueba REAL y nativa del binario bionic aarch64 en un runner arm64 (sin qemu).
-# Ejecuta el artefacto publicado con las libs bionic (mismas que el telefono)
-# y valida: ELF, version, help, TUI render (OpenTUI+FFI), serve HTTP, extraccion
-# del .so y del pty embebidos.
+# Fija HOME/XDG/TMPDIR a rutas escribibles (como hace Android) para que el
+# binario no intente mkdir('/data').
 
 on:
   workflow_dispatch:
@@ -18,6 +17,15 @@ concurrency:
   group: validate-arm64-native
   cancel-in-progress: true
 
+env:
+  HOME: ${{ github.workspace }}/work/home
+  XDG_DATA_HOME: ${{ github.workspace }}/work/home/.local/share
+  XDG_CACHE_HOME: ${{ github.workspace }}/work/home/.cache
+  XDG_CONFIG_HOME: ${{ github.workspace }}/work/home/.config
+  XDG_STATE_HOME: ${{ github.workspace }}/work/home/.local/state
+  TMPDIR: ${{ github.workspace }}/work/tmp
+  TERM: xterm-256color
+
 jobs:
   validate:
     runs-on: ubuntu-24.04-arm
@@ -30,6 +38,7 @@ jobs:
           uname -a
           echo "arch=$(uname -m) cores=$(nproc)"
           free -h
+          echo "HOME=$HOME TMPDIR=$TMPDIR"
 
       - name: Install tools
         run: |
@@ -40,6 +49,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p work && cd work
+          mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMPDIR"
           R=https://github.com/anyelolordmerab-maker/termux-native/releases/download
           curl -fsSL -o oc.tar.zst   "$R/opencode-v2.3.2/opencode-embedded-2.3.2.tar.zst"
           curl -fsSL -o oc.sha256    "$R/opencode-v2.3.2/opencode-embedded-2.3.2.tar.zst.sha256"
@@ -69,6 +79,8 @@ jobs:
           sudo cp "$LINKER" /system/bin/linker64
           sudo cp -a "$LIBDIR"/. /system/lib64/ || true
           sudo chmod 755 /system/bin/linker64
+          # red de seguridad: si algo resuelve /data, dejarlo escribible
+          sudo mkdir -p /data && sudo chmod 777 /data
           echo "--- installed ---"
           ls -l /system/bin/linker64
           ls /system/lib64 | head -20
@@ -94,7 +106,6 @@ jobs:
         run: |
           set -euo pipefail
           cd work
-          export HOME=$PWD/home; mkdir -p "$HOME"
           ./opencode-embedded --version 2>&1 | tee version.log
           grep -q '2\.3\.2' version.log
 
@@ -102,7 +113,6 @@ jobs:
         run: |
           set -euo pipefail
           cd work
-          export HOME=$PWD/home
           ./opencode-embedded --help 2>&1 | tee help.log
           grep -qi 'serve' help.log
 
@@ -110,22 +120,17 @@ jobs:
         run: |
           set -euo pipefail
           cd work
-          export HOME=$PWD/home
-          export XDG_DATA_HOME=$PWD/home/.local/share
-          export XDG_CONFIG_HOME=$PWD/home/.config
-          export XDG_CACHE_HOME=$PWD/home/.cache
-          export TERM=xterm-256color
           set +e
           timeout 55 script -q -e -c "./opencode-embedded" /dev/null > tui.log 2>&1
           echo "tui_exit=$?"
           set -e
           wc -c tui.log
           echo "--- extracted native libs (bunfs -> disk) ---"
-          find /tmp "$HOME" -type f \( -name 'libopentui*.so' -o -name 'opencode-pty*' -o -name '*opentui*.so' \) 2>/dev/null | head -20
+          find "$TMPDIR" "$XDG_CACHE_HOME" "$HOME" /tmp -type f \( -name 'libopentui*.so' -o -name 'opencode-pty*' -o -name '*opentui*.so' \) 2>/dev/null | head -20
           python3 - <<'PY'
           import sys
           d=open('tui.log','rb').read().decode('utf-8','replace')
-          bad=['Unsupported OpenTUI','Failed to initialize','Pointer exceeds','dlopen failed','Cannot find module','exited with code 127','ENOENT']
+          bad=['Unsupported OpenTUI','Failed to initialize','Pointer exceeds','dlopen failed','Cannot find module','exited with code 127','EACCES','ENOENT']
           fail=False
           for b in bad:
               hit=b in d
@@ -144,11 +149,6 @@ jobs:
         run: |
           set -euo pipefail
           cd work
-          export HOME=$PWD/home
-          export XDG_DATA_HOME=$PWD/home/.local/share
-          export XDG_CONFIG_HOME=$PWD/home/.config
-          export XDG_CACHE_HOME=$PWD/home/.cache
-          export TERM=xterm-256color
           ./opencode-embedded serve --hostname 127.0.0.1 --port 4517 > serve.log 2>&1 &
           SRV=$!
           ok=0
@@ -171,7 +171,7 @@ jobs:
           python3 - <<'PY'
           import sys
           d=open('tui_srv.log','rb').read().decode('utf-8','replace')
-          bad=['Unsupported OpenTUI','Failed to initialize','Pointer exceeds','dlopen failed','Cannot find module','requires a password']
+          bad=['Unsupported OpenTUI','Failed to initialize','Pointer exceeds','dlopen failed','Cannot find module','requires a password','EACCES']
           fail=False
           for b in bad:
               hit=b in d
@@ -190,8 +190,6 @@ jobs:
         run: |
           set -euo pipefail
           cat > ffi_test.mjs <<'JS'
-          // Replica exacta del codigo parcheado en toSafeNumberPointer:
-          //   if (pointer > BigInt(Number.MAX_SAFE_INTEGER)) { return pointer; /* OT_PTR_BIGINT */ }
           const POINTER_UNSAFE = 'Pointer exceeds safe integer range';
           function toSafeNumberPointer(pointer) {
             if (pointer > BigInt(Number.MAX_SAFE_INTEGER)) {
@@ -200,12 +198,10 @@ jobs:
             return Number(pointer);
           }
           function assert(c, m){ if(!c){ console.error('FAIL:', m); process.exit(1);} }
-          // tagged pointer de Android 11+ (top byte 0xb4) -> > 2^53
           const tagged = BigInt('0xb400000000000000');
           const r1 = toSafeNumberPointer(tagged);
           assert(typeof r1 === 'bigint', 'tagged must return bigint, got ' + typeof r1);
           assert(r1 === tagged, 'tagged value preserved');
-          // puntero normal (< 2^53) -> number, sin cambios
           const normal = BigInt('0x7f1234567890');
           const r2 = toSafeNumberPointer(normal);
           assert(typeof r2 === 'number', 'normal must return number');
