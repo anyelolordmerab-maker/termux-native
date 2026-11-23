@@ -42,12 +42,11 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq zstd file binutils curl patch git python3 nodejs npm
-          echo "NDK=$ANDROID_NDK_HOME"
+          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}" >> "$GITHUB_ENV"
+          echo "NDK=${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}"
           node --version && npm --version
 
       - name: Build native dsh
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
         run: |
           set -euo pipefail
           bash build/dsh-native/build.sh "$VER" "$PWD/out"
