@@ -1,8 +1,11 @@
-// Self-test ejecutado por el binario compilado cuando OPENCODE_SELFTEST=1.
-// Ejercita los módulos nativos reales que lleva el ejecutable (bionic/aarch64).
+// Self-test del binario compilado (OPENCODE_SELFTEST=1).
+// IMPORTANTE: imports ESTATICOS para que Bun integre los módulos nativos.
 import { mkdtemp, writeFile, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { spawn as ptySpawn } from "bun-pty"
+import * as parcelWatcher from "@parcel/watcher"
+import { FileFinder } from "@ff-labs/fff-bun"
 
 type Row = { name: string; ok: boolean; info: string }
 const rows: Row[] = []
@@ -14,8 +17,7 @@ function report(name: string, ok: boolean, info = "") {
 
 async function testPty(tmp: string) {
   try {
-    const { spawn } = await import("bun-pty")
-    const p = spawn("/system/bin/sh", [], { cols: 80, rows: 24, name: "xterm", cwd: tmp })
+    const p: any = ptySpawn("/system/bin/sh", [], { cols: 80, rows: 24, name: "xterm", cwd: tmp })
     let out = ""
     const dispose = p.onData((d: string) => { out += d })
     p.write("echo SELFTEST_PTY_OK\n")
@@ -31,8 +33,7 @@ async function testPty(tmp: string) {
 async function testWatcher(tmp: string) {
   const dir = await mkdtemp(path.join(tmp, "oc-watch-"))
   try {
-    const mod: any = await import("@parcel/watcher")
-    const api = mod.default ?? mod
+    const api: any = parcelWatcher
     let events: string[] = []
     const sub = await api.subscribe(dir, (err: Error | null, evs: { path: string; type: string }[]) => {
       if (!err) events = evs.map((e) => e.type + ":" + path.basename(e.path))
@@ -52,8 +53,7 @@ async function testFff(tmp: string) {
   const dir = await mkdtemp(path.join(tmp, "oc-fff-"))
   try {
     await writeFile(path.join(dir, "selftest_marker.txt"), "ok")
-    const mod: any = await import("@ff-labs/fff-bun")
-    const created = mod.FileFinder.create({ basePath: dir, disableWatch: true })
+    const created: any = FileFinder.create({ basePath: dir, disableWatch: true })
     if (!created.ok) {
       report("fff", false, String(created.error))
       return

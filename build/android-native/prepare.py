@@ -242,8 +242,8 @@ def patch_index(s):
     if "OPENCODE_SELFTEST" not in s:
         inject = (
             "\n// Native self-test (OPENCODE_SELFTEST=1)\n"
+            "import { runSelfTest } from \"./selftest.js\"\n"
             "if (process.env.OPENCODE_SELFTEST === \"1\") {\n"
-            "  const { runSelfTest } = await import(\"./selftest.js\")\n"
             "  await runSelfTest()\n"
             "  process.exit(0)\n"
             "}\n"
