@@ -231,20 +231,33 @@ idx = os.path.join(OC, "packages/cli/src/index.ts")
 
 
 def patch_index(s):
-    if "OPENCODE_PTY_SOCKET_DIR" in s:
-        return s
     shebang = "#!/usr/bin/env bun\n"
-    line = (
-        "\n// Android: the pty daemon is a linux binary; /tmp does not exist.\n"
-        "if (process.platform === \"android\" && !process.env.OPENCODE_PTY_SOCKET_DIR)\n"
-        "  process.env.OPENCODE_PTY_SOCKET_DIR = process.env.TMPDIR\n"
-    )
-    if s.startswith(shebang):
-        return shebang + line + s[len(shebang):]
-    return line + s
+    if "OPENCODE_PTY_SOCKET_DIR" not in s:
+        line = (
+            "\n// Android: the pty daemon is a linux binary; /tmp does not exist.\n"
+            "if (process.platform === \"android\" && !process.env.OPENCODE_PTY_SOCKET_DIR)\n"
+            "  process.env.OPENCODE_PTY_SOCKET_DIR = process.env.TMPDIR\n"
+        )
+        s = shebang + line + s[len(shebang):] if s.startswith(shebang) else line + s
+    if "OPENCODE_SELFTEST" not in s:
+        inject = (
+            "\n// Native self-test (OPENCODE_SELFTEST=1)\n"
+            "if (process.env.OPENCODE_SELFTEST === \"1\") {\n"
+            "  const { runSelfTest } = await import(\"./selftest.js\")\n"
+            "  await runSelfTest()\n"
+            "  process.exit(0)\n"
+            "}\n"
+        )
+        s = shebang + inject + s[len(shebang):] if s.startswith(shebang) else inject + s
+    return s
 
 
-patch(idx, patch_index, "pty socket dir")
+patch(idx, patch_index, "pty socket dir + selftest hook")
+
+_selftest_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selftest.ts")
+_selftest_dst = os.path.join(OC, "packages/cli/src/selftest.ts")
+shutil.copy2(_selftest_src, _selftest_dst)
+print("PLANT selftest.ts", flush=True)
 
 # ------------------------------------------------------------------ plant
 def roots():

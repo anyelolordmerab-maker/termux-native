@@ -334,6 +334,18 @@ jobs:
           export PATH=/content/bin:$PATH
           bun ffi_test.mjs
 
+      - name: Native modules self-test (pty / watcher / fff)
+        run: |
+          set -euo pipefail
+          cd work
+          OPENCODE_SELFTEST=1 ./opencode-embedded > selftest.log 2>&1 || true
+          cat selftest.log
+          grep -q 'PASS bun-pty' selftest.log
+          grep -q 'PASS parcel-watcher' selftest.log
+          grep -q 'PASS fff' selftest.log
+          grep -q 'SELFTEST_END pass=3/3' selftest.log
+          echo NATIVE_MODULES_SELFTEST_OK
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
