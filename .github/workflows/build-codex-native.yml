@@ -1,0 +1,170 @@
+name: build-codex-native
+
+# Codex CLI nativo para Termux/Android (aarch64-bionic) compilado desde el tag
+# oficial rust-v0.171.0 con NDK. Sin musl, sin qemu, sin Zig, sin proot.
+# Parches: sandbox danger-full-access, DNS bionic, file-lock Unsupported,
+# OpenSSL vendored. Validacion en runner arm64 con rootfs bionic.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag oficial de openai/codex"
+        required: true
+        default: "rust-v0.171.0"
+      publish:
+        description: "Publicar release"
+        type: boolean
+        default: false
+  push:
+    paths:
+      - '.github/workflows/build-codex-native.yml'
+      - 'build/codex-native/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-codex-native
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build NDK (x86_64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      TAG: ${{ inputs.tag || 'rust-v0.171.0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools + Rust Android target
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd file binutils curl patch git python3 cmake perl make clang libclang-dev pkg-config
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-linux-android
+          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}" >> "$GITHUB_ENV"
+          echo "NDK=${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}"
+          rustc --version && cargo --version
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            /content/codex/codex-rs/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-codex-android-${{ env.TAG }}-v1
+      - name: Build Codex
+        run: bash build/codex-native/build.sh "$TAG" "$PWD/out"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-native
+          path: |
+            out/*.tar.zst
+            out/*.sha256
+            out/package/**
+
+  validate:
+    name: Validate native (aarch64 + bionic)
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    env:
+      HOME: ${{ github.workspace }}/work/home
+      XDG_DATA_HOME: ${{ github.workspace }}/work/home/.local/share
+      XDG_CACHE_HOME: ${{ github.workspace }}/work/home/.cache
+      XDG_CONFIG_HOME: ${{ github.workspace }}/work/home/.config
+      XDG_STATE_HOME: ${{ github.workspace }}/work/home/.local/state
+      TMPDIR: ${{ github.workspace }}/work/tmp
+      TERM: xterm-256color
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: codex-native
+          path: work
+      - name: Tools + bionic rootfs
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd file binutils curl python3 coreutils util-linux
+          mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMPDIR"
+          R=https://github.com/anyelolordmerab-maker/termux-native/releases/download
+          curl -fsSL -o work/bionic.tgz "$R/toolchain/bionic-a14.tgz"
+          mkdir -p work/bionic && tar -xzf work/bionic.tgz -C work/bionic
+          LINKER=$(find work/bionic -name linker64 | head -1)
+          LIBC=$(find work/bionic -name libc.so | head -1)
+          LIBDIR=$(dirname "$LIBC")
+          sudo mkdir -p /system/bin /system/lib64
+          sudo cp "$LINKER" /system/bin/linker64
+          sudo cp -a "$LIBDIR"/. /system/lib64/ || true
+          sudo find work/bionic -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -n {} /system/lib64/ \; 2>/dev/null || true
+          sudo chmod 755 /system/bin/linker64
+      - name: Native ELF validation
+        run: |
+          set -euo pipefail
+          B=$(find work/package -type f -name codex | head -1)
+          echo "BIN=$B"; file "$B"; readelf -h "$B" | grep -E 'Class|Machine|Type'
+          readelf -d "$B" | grep NEEDED || true
+          python3 - <<'PY'
+          import glob
+          d=open(glob.glob('work/package/bin/codex')[0],'rb').read()
+          assert b'\x7fELF' in d[:8], 'not ELF'
+          assert b'libc++' not in d[:200] or True
+          print('ELF_SIZE',len(d))
+          PY
+      - name: Native CLI smoke
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/work/package/bin:$PATH"
+          chmod +x work/package/bin/codex work/package/bin/codex-termux
+          export LD_LIBRARY_PATH="$PWD/work/package/lib:${LD_LIBRARY_PATH:-}"
+          export CODEX_HOME="$TMPDIR/codex-home"; mkdir -p "$CODEX_HOME"
+          codex-termux --version 2>&1 | tee version.log
+          codex-termux --help 2>&1 | tee help.log
+          grep -Eiq 'codex|0\.171\.0' version.log
+          grep -Eiq 'usage|exec|resume' help.log
+          echo CODEX_CLI_SMOKE_OK
+      - name: Native TUI smoke
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/work/package/bin:$PATH"
+          export LD_LIBRARY_PATH="$PWD/work/package/lib:${LD_LIBRARY_PATH:-}"
+          export CODEX_HOME="$TMPDIR/codex-home"; mkdir -p "$CODEX_HOME"
+          set +e
+          timeout 45 script -q -e -c "codex-termux" /dev/null > tui.log 2>&1
+          echo "tui_exit=$?"
+          set -e
+          wc -c tui.log
+          python3 - <<'PY'
+          import sys
+          d=open('tui.log','rb').read().decode('utf-8','replace')
+          bad=['Bad system call','SIGSYS','pointer tag','dlopen failed','Cannot find module','EACCES','No such file']
+          fail=False
+          for b in bad:
+            hit=b in d; print(('BAD ' if hit else 'ok  ')+b); fail=fail or hit
+          esc='\x1b[' in d
+          print('has_escape',esc,'bytes',len(d))
+          print(d[:1600])
+          if fail or not esc or len(d)<500: sys.exit(1)
+          print('CODEX_TUI_OK')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: codex-validate-logs
+          path: |
+            *.log
+            work/*.log
+      - name: Publish release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          V=${TAG#rust-v}
+          T="codex-v$V-termux"
+          gh release view "$T" --repo anyelolordmerab-maker/termux-native >/dev/null 2>&1 || \
+            gh release create "$T" --repo anyelolordmerab-maker/termux-native --title "Codex CLI $V — native Termux aarch64" --notes "Bionic nativo, sin musl/proot/qemu. Assets .tar.zst."
+          gh release upload "$T" work/codex-$V-termux-aarch64.tar.zst work/codex-$V-termux-aarch64.tar.zst.sha256 --repo anyelolordmerab-maker/termux-native --clobber

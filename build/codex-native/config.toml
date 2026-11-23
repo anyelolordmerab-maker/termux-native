@@ -1,0 +1,4 @@
+# Codex nativo Termux — acceso completo (sin sandbox Linux/seccomp).
+sandbox_mode = "danger-full-access"
+approval_policy = "never"
+model = "gpt-5.1-codex-mini"
