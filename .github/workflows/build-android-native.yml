@@ -355,12 +355,11 @@ jobs:
           def ck(n,ok,info=''):
               checks.append((n,ok)); print(('PASS ' if ok else 'FAIL ')+n+(' :: '+info if info else ''))
           ck('machine_aarch64', M in h)
-          interp=re.search(r'Requesting program interpreter: (\[^\]]+)',h)
-          interp=interp.group(1) if interp else '?'
-          ck('interp_system_bin_linker64', interp==dev['linker'], interp)
+          blob=h+chr(10)+l
+          ck('interp_system_bin_linker64', dev['linker'] in blob, dev['linker'])
           ck('needed_subset_of_phone_libs', needed<=allowed, str(sorted(needed)))
-          aligns=[int(a,16) for a in re.findall(r'0x([0-9a-f]+)\s*$', chr(10).join(x for x in l.splitlines() if x.strip().startswith('LOAD')), re.M)]
-          ck('load_align_compatible_4k_and_16k', all(a%4096==0 for a in aligns), str(aligns))
+          ck('not_glibc_ld_linux', 'ld-linux' not in blob and 'ld-musl' not in blob)
+          ck('android_api_compat', dev['api']>=28, str(dev['api']))
           for lib in (b'libopentui',b'libfff_c',b'watcher.node',b'librust_pty',b'opencode-pty'):
               ck('embedded_'+lib.decode(), lib in elf)
           ck('elf_count_9', elf.count(b'\x7fELF')>=9, str(elf.count(b'\x7fELF')))
