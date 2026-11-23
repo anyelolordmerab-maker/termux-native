@@ -125,4 +125,19 @@ def f(s):
     return s
 edit(p, f, "util-ripgrep android shim")
 
+# ---------------------------------------------------- sandbox por defecto FULL
+# El usuario quiere acceso completo nativo (no proot, no jaulas de directorios).
+# danger-full-access hace que el backend NO confine y lance el argv original.
+_pol = glob.glob(os.path.join(ROOT, "**/@deepseek-ai/dsh-sandbox-policy/lib/index.js"), recursive=True)
+if not _pol:
+    raise SystemExit("FATAL: dsh-sandbox-policy not found")
+for _p in _pol:
+    _t = open(_p, encoding="utf-8").read()
+    if '.default("read-only")' in _t:
+        _t = _t.replace('.default("read-only")', '.default("danger-full-access")')
+        open(_p, "w", encoding="utf-8").write(_t)
+        print("TRANSFORM sandbox default full access", _p.replace(ROOT, ""))
+    elif '.default("danger-full-access")' not in _t:
+        raise SystemExit(f"FATAL: sandbox default anchor missing in {_p}")
+
 print("TRANSFORM_ALL_OK")

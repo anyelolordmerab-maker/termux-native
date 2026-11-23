@@ -52,8 +52,9 @@ ln -sf /data/data/com.termux/files/usr/bin/rg \
 echo "==> [6/7] koffi statx + abwrap NDK"
 # koffi.node prebuilt de referencia ya incluye el arreglo statx
 if [ -n "${ANDROID_NDK_HOME:-}" ]; then
-  git clone --depth 1 https://github.com/dukmu/abwrap-android.git "$OUT/abwrap-android"
-  (cd "$OUT/abwrap-android" && BUILD_DIR="$OUT/abwrap-android/build-release" sh scripts/build-android.sh arm64-v8a)
+  git clone https://github.com/dukmu/abwrap-android.git "$OUT/abwrap-android"
+  # pin al fix de futimens/futimesat sobre --tmpfs (issue #2), estable desde 2026-08-24
+  (cd "$OUT/abwrap-android" && git merge-base --is-ancestor bf51daed38c3e2409d1462bc721edcbc529dd65e HEAD && BUILD_DIR="$OUT/abwrap-android/build-release" sh scripts/build-android.sh arm64-v8a)
   install -Dm755 "$OUT/abwrap-android/build-release/abwrap" "$STAGE/package/bin/abwrap"
   cat > "$STAGE/package/bin/bwrap" <<'EOF'
 #!/usr/bin/env bash
