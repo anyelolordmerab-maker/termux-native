@@ -165,19 +165,18 @@ for core in cores:
         # 3) Bun native-library resolver: add the android arm.
         if os.path.basename(chunk).startswith("chunk-bun-") and 'import("@opentui/core-android-arm64")' not in s:
             m = WIN32_LOADER.search(s)
-            if not m:
-                die(f"loader win32 anchor in {chunk}")
-            i = m.group("i")
-            arm = (
-                f'{i}if (process.platform === "android") {{\n'
-                f'{i}  if (process.arch === "arm64") {{\n'
-                f'{i}    return (await import("@opentui/core-android-arm64")).default;\n'
-                f'{i}  }}\n'
-                f'{i}}}\n'
-                f'{i}'
-            )
-            s = s[: m.start()] + arm + s[m.start():]
-            loader_patched += 1
+            if m:
+                i = m.group("i")
+                arm = (
+                    f'{i}if (process.platform === "android") {{\n'
+                    f'{i}  if (process.arch === "arm64") {{\n'
+                    f'{i}    return (await import("@opentui/core-android-arm64")).default;\n'
+                    f'{i}  }}\n'
+                    f'{i}}}\n'
+                    f'{i}'
+                )
+                s = s[: m.start()] + arm + s[m.start():]
+                loader_patched += 1
 
         if s != o:
             write(chunk, s)
