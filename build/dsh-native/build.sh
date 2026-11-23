@@ -50,7 +50,7 @@ ln -sf /data/data/com.termux/files/usr/bin/rg \
 
 # 6) koffi statx patch + abwrap (bwrap-compatible) compilado con NDK
 echo "==> [6/7] koffi statx + abwrap NDK"
-apply_all "$PATCHES/koffi-statx.patch" koffi
+# koffi.node prebuilt de referencia ya incluye el arreglo statx
 if [ -n "${ANDROID_NDK_HOME:-}" ]; then
   git clone --depth 1 https://github.com/dukmu/abwrap-android.git "$OUT/abwrap-android"
   (cd "$OUT/abwrap-android" && BUILD_DIR="$OUT/abwrap-android/build-release" sh scripts/build-android.sh arm64-v8a)
