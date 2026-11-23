@@ -31,6 +31,13 @@ def die(msg):
     sys.exit(1)
 
 
+def rm(d):
+    if os.path.islink(d) or os.path.isfile(d):
+        os.unlink(d)
+    elif os.path.isdir(d):
+        shutil.rmtree(d)
+
+
 def read(p):
     return open(p, encoding="utf-8").read()
 
@@ -296,8 +303,7 @@ def plant_dir(name, src):
     n = 0
     for r in roots():
         d = os.path.join(r, name)
-        if os.path.isdir(d):
-            shutil.rmtree(d)
+        rm(d)
         shutil.copytree(src, d)
         pkgp = os.path.join(d, "package.json")
         pkg = json.load(open(pkgp))
