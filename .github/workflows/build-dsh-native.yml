@@ -1,0 +1,93 @@
+name: build-dsh-native
+
+# Transformacion nativa Termux/aarch64 de @deepseek-ai/dsh (DeepSeek Harness).
+# Usa el release de referencia para los modulos N-API bionic (node-pty, koffi),
+# aplica todos los parches Android y compila abwrap con NDK. Sin Zig, sin qemu,
+# sin descargar nada al telefono. Solo assets comprimidos (.tar.zst).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version npm de @deepseek-ai/dsh"
+        required: true
+        default: "0.2.2-rc.5"
+      publish:
+        description: "Publicar en GitHub Release"
+        type: boolean
+        default: false
+  push:
+    paths:
+      - '.github/workflows/build-dsh-native.yml'
+      - 'build/dsh-native/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-dsh-native
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VER: ${{ inputs.version || '0.2.2-rc.5' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd file binutils curl patch git python3 nodejs npm
+          echo "NDK=$ANDROID_NDK_HOME"
+          node --version && npm --version
+
+      - name: Build native dsh
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: |
+          set -euo pipefail
+          bash build/dsh-native/build.sh "$VER" "$PWD/out"
+
+      - name: Validate native bundle
+        run: |
+          set -euo pipefail
+          cd out
+          TAR="dsh-$VER-termux-aarch64.tar.zst"
+          test -f "$TAR" && test -f "$TAR.sha256"
+          echo "=== archive ==="; tar --zstd -tf "$TAR" | grep -E 'package/bin/dsh$|pty\.node$|koffi\.node$|abwrap$|bwrap$'
+          rm -rf check && mkdir check && tar --zstd -xf "$TAR" -C check
+          for f in \
+            check/package/node_modules/node-pty/build/Release/pty.node \
+            check/package/node_modules/koffi/build/koffi/android_arm64/koffi.node \
+            check/package/bin/abwrap; do
+            echo "=== $f ==="; file "$f"; readelf -h "$f" | grep -E 'Class|Machine'
+            readelf -d "$f" | grep NEEDED || true
+          done
+          echo "=== patches ==="
+          grep -Rq "prootProfileArgs" check/package/node_modules/@deepseek-ai/dsh-sandbox-local && echo "PASS patch07 proot"
+          grep -Rq "ripgrep-android-arm64" check/package/node_modules/@deepseek-ai/dsh-tool-fs-search && echo "PASS patch08 rg"
+          grep -Rq "android-base" check/package/bin/bwrap && echo "PASS abwrap wrapper"
+          node -e 'const j=require("./check/package/package.json");console.log("VERSION",j.name,j.version);if(j.name!=="dsh-termux")process.exit(1)'
+          echo NATIVE_DSH_VALIDATION_OK
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-native
+          path: |
+            out/*.tar.zst
+            out/*.sha256
+
+      - name: Publish release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="dsh-v$VER-termux"
+          gh release view "$TAG" --repo anyelolordmerab-maker/termux-native >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo anyelolordmerab-maker/termux-native --title "DeepSeek Harness $VER — native Termux aarch64" --notes "Nativo Android/Termux. Assets comprimidos .tar.zst."
+          gh release upload "$TAG" out/dsh-$VER-termux-aarch64.tar.zst out/dsh-$VER-termux-aarch64.tar.zst.sha256 --repo anyelolordmerab-maker/termux-native --clobber
