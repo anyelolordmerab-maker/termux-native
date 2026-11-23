@@ -126,7 +126,7 @@ jobs:
           set -e
           wc -c tui.log
           echo "--- extracted native libs (bunfs -> disk) ---"
-          find "$TMPDIR" "$XDG_CACHE_HOME" "$HOME" /tmp -type f \( -name 'libopentui*.so' -o -name 'opencode-pty*' -o -name '*opentui*.so' \) 2>/dev/null | head -20
+          ( find "$TMPDIR" "$XDG_CACHE_HOME" "$HOME" /tmp -type f \( -name 'libopentui*.so' -o -name 'opencode-pty*' -o -name '*opentui*.so' \) 2>/dev/null | head -20 ) || true
           python3 - <<'PY'
           import sys
           d=open('tui.log','rb').read().decode('utf-8','replace')
