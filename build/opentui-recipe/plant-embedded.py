@@ -53,6 +53,12 @@ h1 = plant_helper('@lydell/node-pty-linux-arm64', ['pty.node'])
 h2 = plant_helper('@parcel/watcher-linux-arm64-glibc', ['watcher.node'])
 h3 = plant_helper('@ff-labs/fff-bin-linux-arm64-gnu', ['fff'])
 h4 = plant_helper('@yuuang/ffi-rs-linux-arm64-gnu', ['ffi.node'])
+# stubs -android (el target linux-arm64-android los pide con sufijo android)
+h5 = plant_helper('@parcel/watcher-linux-arm64-android', ['watcher.node'])
+h6 = plant_helper('@lydell/node-pty-linux-arm64-android', ['pty.node'])
+h7 = plant_helper('@ff-labs/fff-bin-linux-arm64-android', ['fff'])
+h8 = plant_helper('@yuuang/ffi-rs-linux-arm64-android', ['ffi.node'])
+h9 = plant_helper('@parcel/watcher-linux-arm64', ['watcher.node'])
 
 # verificar que la .so este en la raiz principal
 primary = OC + '/node_modules/@opentui/core-linux-arm64/libopentui.so'
