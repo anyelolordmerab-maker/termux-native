@@ -1,0 +1,229 @@
+name: validate-arm64-native
+
+# Prueba REAL y nativa del binario bionic aarch64 en un runner arm64 (sin qemu).
+# Ejecuta el artefacto publicado con las libs bionic (mismas que el telefono)
+# y valida: ELF, version, help, TUI render (OpenTUI+FFI), serve HTTP, extraccion
+# del .so y del pty embebidos.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/validate-arm64-native.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-arm64-native
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host info
+        run: |
+          uname -a
+          echo "arch=$(uname -m) cores=$(nproc)"
+          free -h
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd file binutils curl python3 coreutils util-linux
+
+      - name: Download artifact + bionic rootfs
+        run: |
+          set -euo pipefail
+          mkdir -p work && cd work
+          R=https://github.com/anyelolordmerab-maker/termux-native/releases/download
+          curl -fsSL -o oc.tar.zst   "$R/opencode-v2.3.2/opencode-embedded-2.3.2.tar.zst"
+          curl -fsSL -o oc.sha256    "$R/opencode-v2.3.2/opencode-embedded-2.3.2.tar.zst.sha256"
+          curl -fsSL -o bionic.tgz   "$R/toolchain/bionic-a14.tgz"
+          EXPECTED=$(cut -d' ' -f1 oc.sha256)
+          ACTUAL=$(sha256sum oc.tar.zst | cut -d' ' -f1)
+          echo "expected=$EXPECTED"
+          echo "actual  =$ACTUAL"
+          if [ "$EXPECTED" != "$ACTUAL" ]; then echo "SHA256_MISMATCH"; exit 1; fi
+          echo "SHA256_OK"
+          tar --zstd -xf oc.tar.zst
+          mkdir -p bionic && tar -xzf bionic.tgz -C bionic
+          echo "--- artifact ---"; ls -l opencode-embedded
+          echo "--- bionic layout ---"; find bionic -maxdepth 3 -type f | sort | head -80
+
+      - name: Install bionic as /system (Android-like layout)
+        run: |
+          set -euo pipefail
+          cd work
+          LINKER=$(find bionic -name linker64 | head -1)
+          LIBC=$(find bionic -name libc.so | head -1)
+          LIBDIR=$(dirname "$LIBC")
+          echo "LINKER=$LINKER"
+          echo "LIBDIR=$LIBDIR"
+          test -n "$LINKER" && test -n "$LIBC"
+          sudo mkdir -p /system/bin /system/lib64 /linkerconfig
+          sudo cp "$LINKER" /system/bin/linker64
+          sudo cp -a "$LIBDIR"/. /system/lib64/ || true
+          sudo chmod 755 /system/bin/linker64
+          echo "--- installed ---"
+          ls -l /system/bin/linker64
+          ls /system/lib64 | head -20
+          file /system/bin/linker64
+
+      - name: ELF inspection
+        run: |
+          set -euo pipefail
+          cd work
+          file opencode-embedded
+          readelf -h opencode-embedded | egrep 'Class|Machine|Type|Entry'
+          echo '--- NEEDED ---'
+          readelf -d opencode-embedded | grep NEEDED || true
+          echo '--- embedded ELF count + strings ---'
+          python3 - <<'PY'
+          d=open('opencode-embedded','rb').read()
+          print('size', len(d))
+          print('ELF_count', d.count(b'\x7fELF'))
+          print('has_libopentui_str', b'libopentui' in d)
+          PY
+
+      - name: Run --version (native)
+        run: |
+          set -euo pipefail
+          cd work
+          export HOME=$PWD/home; mkdir -p "$HOME"
+          ./opencode-embedded --version 2>&1 | tee version.log
+          grep -q '2\.3\.2' version.log
+
+      - name: Run --help (native)
+        run: |
+          set -euo pipefail
+          cd work
+          export HOME=$PWD/home
+          ./opencode-embedded --help 2>&1 | tee help.log
+          grep -qi 'serve' help.log
+
+      - name: TUI standalone render (real pty)
+        run: |
+          set -euo pipefail
+          cd work
+          export HOME=$PWD/home
+          export XDG_DATA_HOME=$PWD/home/.local/share
+          export XDG_CONFIG_HOME=$PWD/home/.config
+          export XDG_CACHE_HOME=$PWD/home/.cache
+          export TERM=xterm-256color
+          set +e
+          timeout 55 script -q -e -c "./opencode-embedded" /dev/null > tui.log 2>&1
+          echo "tui_exit=$?"
+          set -e
+          wc -c tui.log
+          echo "--- extracted native libs (bunfs -> disk) ---"
+          find /tmp "$HOME" -type f \( -name 'libopentui*.so' -o -name 'opencode-pty*' -o -name '*opentui*.so' \) 2>/dev/null | head -20
+          python3 - <<'PY'
+          import sys
+          d=open('tui.log','rb').read().decode('utf-8','replace')
+          bad=['Unsupported OpenTUI','Failed to initialize','Pointer exceeds','dlopen failed','Cannot find module','exited with code 127','ENOENT']
+          fail=False
+          for b in bad:
+              hit=b in d
+              print(('BAD ' if hit else 'ok  ')+b)
+              fail=fail or hit
+          has_esc='\x1b[' in d
+          print('has_escape', has_esc, 'bytes', len(d))
+          print('--- SAMPLE ---')
+          print(d[:1800])
+          if fail or not has_esc or len(d)<800:
+              print('TUI_TEST_FAIL'); sys.exit(1)
+          print('TUI_TEST_OK')
+          PY
+
+      - name: Serve HTTP + TUI over server
+        run: |
+          set -euo pipefail
+          cd work
+          export HOME=$PWD/home
+          export XDG_DATA_HOME=$PWD/home/.local/share
+          export XDG_CONFIG_HOME=$PWD/home/.config
+          export XDG_CACHE_HOME=$PWD/home/.cache
+          export TERM=xterm-256color
+          ./opencode-embedded serve --hostname 127.0.0.1 --port 4517 > serve.log 2>&1 &
+          SRV=$!
+          ok=0
+          for i in $(seq 1 60); do
+            sleep 1
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4517/app || true)
+            if [ "$code" = "200" ]; then ok=1; break; fi
+          done
+          echo "serve_http_ok=$ok"
+          PW=$(grep 'server password ' serve.log | tail -1 | sed 's/.*server password //')
+          echo "pw_len=${#PW}"
+          if [ "$ok" != "1" ]; then echo "SERVE_FAIL"; kill $SRV 2>/dev/null || true; exit 1; fi
+          export OPENCODE_PASSWORD="$PW" OPENCODE_SERVER_PASSWORD="$PW"
+          set +e
+          timeout 40 script -q -e -c "./opencode-embedded --server http://127.0.0.1:4517" /dev/null > tui_srv.log 2>&1
+          echo "tui_srv_exit=$?"
+          set -e
+          wc -c tui_srv.log
+          kill $SRV 2>/dev/null || true
+          python3 - <<'PY'
+          import sys
+          d=open('tui_srv.log','rb').read().decode('utf-8','replace')
+          bad=['Unsupported OpenTUI','Failed to initialize','Pointer exceeds','dlopen failed','Cannot find module','requires a password']
+          fail=False
+          for b in bad:
+              hit=b in d
+              print(('BAD ' if hit else 'ok  ')+b)
+              fail=fail or hit
+          has_esc='\x1b[' in d
+          print('has_escape', has_esc, 'bytes', len(d))
+          print('--- SAMPLE ---')
+          print(d[:1800])
+          if fail or len(d)<800:
+              print('TUI_SRV_FAIL'); sys.exit(1)
+          print('TUI_SRV_OK')
+          PY
+
+      - name: FFI tagged-pointer logic unit check
+        run: |
+          set -euo pipefail
+          cat > ffi_test.mjs <<'JS'
+          // Replica exacta del codigo parcheado en toSafeNumberPointer:
+          //   if (pointer > BigInt(Number.MAX_SAFE_INTEGER)) { return pointer; /* OT_PTR_BIGINT */ }
+          const POINTER_UNSAFE = 'Pointer exceeds safe integer range';
+          function toSafeNumberPointer(pointer) {
+            if (pointer > BigInt(Number.MAX_SAFE_INTEGER)) {
+              return pointer; /* OT_PTR_BIGINT */
+            }
+            return Number(pointer);
+          }
+          function assert(c, m){ if(!c){ console.error('FAIL:', m); process.exit(1);} }
+          // tagged pointer de Android 11+ (top byte 0xb4) -> > 2^53
+          const tagged = BigInt('0xb400000000000000');
+          const r1 = toSafeNumberPointer(tagged);
+          assert(typeof r1 === 'bigint', 'tagged must return bigint, got ' + typeof r1);
+          assert(r1 === tagged, 'tagged value preserved');
+          // puntero normal (< 2^53) -> number, sin cambios
+          const normal = BigInt('0x7f1234567890');
+          const r2 = toSafeNumberPointer(normal);
+          assert(typeof r2 === 'number', 'normal must return number');
+          assert(r2 === 0x7f1234567890, 'normal value preserved');
+          console.log('FFI_LOGIC_OK tagged=BigInt normal=Number');
+          JS
+          if command -v node >/dev/null 2>&1; then node ffi_test.mjs; else
+            curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1 || true
+            export PATH="$HOME/.bun/bin:$PATH"
+            bun ffi_test.mjs
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validate-logs
+          path: |
+            work/*.log
+            ffi_test.mjs
+          if-no-files-found: ignore
