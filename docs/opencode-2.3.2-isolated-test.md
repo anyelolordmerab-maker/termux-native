@@ -29,6 +29,7 @@ export XDG_CACHE_HOME=$OC/cache
 export XDG_STATE_HOME=$OC/state
 export TMPDIR=$OC/tmp
 export TERM=xterm-256color
+unset LD_LIBRARY_PATH   # no heredar libs del 2.0.31
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$TMPDIR"
 ```
 
@@ -42,6 +43,7 @@ $B serve --hostname 127.0.0.1 --port 4518 > $OC/logs/serve.log 2>&1 &
 echo $! > $OC/logs/serve.pid
 # esperar HTTP 200 en http://127.0.0.1:4518/app
 PW=$(grep 'server password ' $OC/logs/serve.log | tail -1 | sed 's/.*server password //')
+export OPENCODE_PASSWORD="$PW"
 export OPENCODE_SERVER_PASSWORD="$PW"
 timeout 40 script -q -e -c "$B --server http://127.0.0.1:4518" /dev/null > $OC/logs/tui-server.log 2>&1
 ```

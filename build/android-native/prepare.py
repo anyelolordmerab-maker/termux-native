@@ -242,7 +242,7 @@ def patch_index(s):
     return s
 
 
-patch(idx, patch_index, "pty socket dir + selftest hook")
+patch(idx, patch_index, "pty socket dir")
 
 # ------------------------------------------------------------------ plant
 def rm(d):

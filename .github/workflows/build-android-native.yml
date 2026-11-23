@@ -134,6 +134,7 @@ jobs:
           curl -fsSL -o /tmp/oc.tgz "https://codeload.github.com/anomalyco/opencode/tar.gz/refs/tags/v$VER"
           mkdir -p /content/oc && tar xzf /tmp/oc.tgz -C /content/oc --strip-components=1
           curl -fsSL -o /content/libopentui.bionic.so "$R/opencode-v$VER/libopentui.android-arm64.so"
+          echo "50f8e358cd42dd0ec928be256ac2a217cc9a26c5547d7d30f9becf8b8d2f8b97  /content/libopentui.bionic.so" | sha256sum -c -
           # npm: versiones EXACTAS que usa opencode 2.3.2
           curl -fsSL -o work/vendor/watcher.tgz "https://registry.npmjs.org/@parcel/watcher-android-arm64/-/watcher-android-arm64-2.5.1.tgz"
           mkdir -p work/vendor/watcher && tar xzf work/vendor/watcher.tgz -C work/vendor/watcher
@@ -363,7 +364,6 @@ jobs:
           for lib in (b'libopentui',b'libfff_c',b'watcher.node',b'librust_pty',b'opencode-pty'):
               ck('embedded_'+lib.decode(), lib in elf)
           ck('elf_count_9', elf.count(b'\x7fELF')>=9, str(elf.count(b'\x7fELF')))
-          ck('reference_'+ref.replace(' ','_'), True, 'phone runs '+ref+' with same interp and superset NEEDED')
           bad=[n for n,ok in checks if not ok]
           print('DEVICE_COMPAT pass=%d/%d'%(len(checks)-len(bad),len(checks)))
           if bad: sys.exit(1)
