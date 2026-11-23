@@ -26,7 +26,7 @@ echo "==> [2/7] npm install --ignore-scripts"
 cd "$STAGE/package"
 npm install --ignore-scripts --no-audit --no-fund --engine-strict=false >/dev/null 2>&1
 # fallback WASM de sharp (nativo x64 del runner no sirve en Android)
-npm install @img/sharp-wasm32 --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
+npm install @img/sharp-wasm32 pnpm --no-save --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 || true
 
 # 3) transformacion semantica Android (las fuentes rc.5 cambiaron vs rc.1)
 echo "==> [3/7] applying Android transformations"
@@ -74,6 +74,7 @@ cat > "$STAGE/package/bin/dsh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+export PATH="$ROOT/node_modules/.bin:$PATH"
 exec node --expose-internals "$ROOT/node_modules/@deepseek-ai/dsh/lib/bin.js" "$@"
 EOF
 chmod 755 "$STAGE/package/bin/dsh"
