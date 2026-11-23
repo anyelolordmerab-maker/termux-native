@@ -337,10 +337,12 @@ def plant_pty():
 
 def plant_bunpty():
     n = 0
-    for p in glob.glob(
-        os.path.join(OC, "node_modules/**/rust-pty/target/release/librust_pty_arm64.so"),
-        recursive=True,
-    ):
+    pat = os.path.join(OC, "node_modules/**/rust-pty/target/release/librust_pty_arm64.so")
+    try:
+        found = glob.glob(pat, recursive=True, include_hidden=True)
+    except TypeError:  # python < 3.11
+        found = glob.glob(pat, recursive=True) + glob.glob(os.path.join(OC, "node_modules/.bun/*/node_modules/bun-pty/rust-pty/target/release/librust_pty_arm64.so"))
+    for p in found:
         shutil.copy2(BUNPTY_SO, p)
         n += 1
     if n == 0:
