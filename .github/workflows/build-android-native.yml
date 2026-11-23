@@ -70,11 +70,22 @@ jobs:
           export AR_aarch64_linux_android="$TOOLCHAIN/bin/llvm-ar"
           export RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384"
           cd /tmp/bun-pty/rust-pty
+          cargo fetch --target aarch64-linux-android
+          # termios 0.2.2 no soporta android; Android usa termios estilo Linux.
+          python3 - <<'PYPATCH'
+          import glob, os
+          pats = glob.glob(os.path.expanduser('~/.cargo/registry/src/*/termios-0.2.2/src/**/*.rs'), recursive=True) + \
+                 glob.glob(os.path.expanduser('~/.cargo/registry/src/*/termios-0.2.2/src/*.rs'))
+          for p in pats:
+              s=open(p).read(); o=s
+              s=s.replace('target_os = "linux"', 'any(target_os = "linux", target_os = "android")')
+              if s!=o: open(p,'w').write(s); print('patched',p)
+          PYPATCH
           cargo build --release --target aarch64-linux-android
           mkdir -p "$GITHUB_WORKSPACE/out"
           cp target/aarch64-linux-android/release/librust_pty.so "$GITHUB_WORKSPACE/out/"
           file "$GITHUB_WORKSPACE/out/librust_pty.so"
-          readelf -h "$GITHUB_WORKSPACE/out/librust_pty.so" | egrep 'Class|Machine|Type'
+          readelf -h "$GITHUB_WORKSPACE/out/librust_pty.so" | egrep 'Class|Machine|Type' 
 
       - uses: actions/upload-artifact@v4
         with:
