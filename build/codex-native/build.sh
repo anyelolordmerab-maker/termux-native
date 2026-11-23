@@ -3,8 +3,8 @@ set -euo pipefail
 TAG="${1:?usage: build.sh rust-v0.171.0}"
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 OUT="${2:-$PWD/out}"
-mkdir -p "$OUT" /content
-SRC=/content/codex
+mkdir -p "$OUT"
+SRC="$OUT/codex-src"
 if [ ! -d "$SRC/.git" ]; then
   git clone --depth 1 --branch "$TAG" https://github.com/openai/codex.git "$SRC"
 fi
