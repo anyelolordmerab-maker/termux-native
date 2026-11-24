@@ -1,0 +1,140 @@
+name: functional-test-dsh
+
+# Prueba ligera del release DSH publicado (NO recompila): baja el .tar.zst,
+# verifica sha, monta bionic + node aarch64 de Termux y comprueba TUI/engine.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag del release DSH"
+        type: string
+        default: "dsh-v0.2.2-rc.5-termux"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: functional-test-dsh-${{ inputs.tag }}
+  cancel-in-progress: true
+
+jobs:
+  functional:
+    name: DSH release (bionic, node aarch64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd file binutils curl python3 coreutils qemu-user-static
+          mkdir -p work /data
+          sudo mkdir -p /data/data/com.termux/files/usr
+          sudo chmod 777 /data/data/com.termux/files
+
+      - name: Download release + sha
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          R="https://github.com/anyelolordmerab-maker/termux-native/releases/download/$TAG"
+          T="dsh-0.2.2-rc.5-termux-aarch64.tar.zst"
+          curl -fsSL -o "work/$T" "$R/$T"
+          curl -fsSL -o "work/$T.sha256" "$R/$T.sha256"
+          cd work && sha256sum -c "$T.sha256"
+          tar --zstd -xf "$T"
+          test -x check/package/bin/dsh
+          node -e 'const j=require("./check/package/package.json");console.log("VERSION",j.name,j.version);if(j.name!=="dsh-termux")process.exit(1)'
+
+      - name: Bionic rootfs -> /system
+        run: |
+          set -euo pipefail
+          cd work
+          R=https://github.com/anyelolordmerab-maker/termux-native/releases/download/toolchain
+          curl -fsSL -o bionic.tgz "$R/bionic-a14.tgz"
+          mkdir -p bionic && tar -xzf bionic.tgz -C bionic
+          LINKER=$(find bionic -name linker64 | head -1)
+          LIBC=$(find bionic -name libc.so | head -1)
+          LIBDIR=$(dirname "$LIBC")
+          test -n "$LINKER" && test -n "$LIBC"
+          sudo mkdir -p /system/bin /system/lib64
+          sudo cp "$LINKER" /system/bin/linker64
+          sudo cp -a "$LIBDIR"/. /system/lib64/ || true
+          sudo chmod 755 /system/bin/linker64
+          file /system/bin/linker64
+
+      - name: Node aarch64 (Termux .deb)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ndeb && cd /tmp/ndeb
+          curl -fsSL -o node.deb https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_26.13.1_aarch64.deb
+          ar x node.deb
+          tar --zstd -xf data.tar.zst -C /
+          NODE=/data/data/com.termux/files/usr/bin/node
+          test -x "$NODE"
+          export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
+          qemu-aarch64-static -L / "$NODE" --version
+
+      - name: Native bundle checks
+        run: |
+          set -euo pipefail
+          cd work
+          for f in \
+            check/package/node_modules/node-pty/build/Release/pty.node \
+            check/package/node_modules/koffi/build/koffi/android_arm64/koffi.node \
+            check/package/bin/abwrap; do
+            echo "=== $f ==="
+            file "$f"
+            readelf -h "$f" | grep -E 'Class|Machine'
+            readelf -d "$f" | grep NEEDED || true
+          done
+          grep -Rq 'android: \["bwrap"' check/package/node_modules/@deepseek-ai/dsh-sandbox-local && echo "PASS native bwrap chain"
+          ! grep -Rq "proot" check/package/node_modules/@deepseek-ai/dsh-sandbox-local && echo "PASS no proot"
+          grep -Rq '.default("danger-full-access")' check/package/node_modules/@deepseek-ai/dsh-sandbox-policy && echo "PASS sandbox full-access default"
+          grep -Rq 'process.platform === "android"' check/package/node_modules/@deepseek-ai/dsh-util-ripgrep && echo "PASS transform rg android"
+          grep -Rq 'process.platform === "android"' check/package/node_modules/@deepseek-ai/dsh-terminal-bash && echo "PASS transform terminal android"
+          grep -Rq "android-base" check/package/bin/bwrap && echo "PASS abwrap wrapper"
+          echo NATIVE_BUNDLE_OK
+
+      - name: DSH version/help (motor real)
+        run: |
+          set -euo pipefail
+          cd work
+          export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
+          NODE=/data/data/com.termux/files/usr/bin/node
+          JS=check/package/node_modules/@deepseek-ai/dsh/lib/bin.js
+          qemu-aarch64-static -L / "$NODE" --expose-internals "$JS" --version 2>&1 | tee dsh-version.log
+          qemu-aarch64-static -L / "$NODE" --expose-internals "$JS" --help 2>&1 | tee dsh-help.log
+          test -s dsh-version.log
+
+      - name: DSH TUI (pty real)
+        run: |
+          set -euo pipefail
+          cd work
+          export HOME="$PWD/home"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          export XDG_STATE_HOME="$HOME/.local/state"
+          export TMPDIR="$PWD/tmp"
+          mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMPDIR"
+          export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
+          NODE=/data/data/com.termux/files/usr/bin/node
+          JS=check/package/node_modules/@deepseek-ai/dsh/lib/bin.js
+          set +e
+          script -q -e -c "qemu-aarch64-static -L / $NODE --expose-internals $JS" /dev/null > dsh-tui.log 2>&1
+          RC=$?
+          set -e
+          echo "tui_rc=$RC"
+          wc -c dsh-tui.log
+          python3 - <<'PY'
+          d=open('dsh-tui.log','rb').read().decode('utf-8','replace')
+          bad=['Cannot find module','dlopen failed','EACCES','ENOENT','not supported on the current platform','SyntaxError']
+          fail=any(b in d for b in bad)
+          esc='\x1b[' in d
+          print('has_escape',esc,'bytes',len(d))
+          print(d[:1200])
+          if fail or not esc or len(d)<80:
+              print('DSH_TUI_FAIL'); raise SystemExit(1)
+          print('DSH_TUI_OK')
+          PY
