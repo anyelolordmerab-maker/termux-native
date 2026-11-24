@@ -61,13 +61,29 @@ jobs:
           ZV=0.15.2
           curl -fsSL -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZV}/zig-x86_64-linux-${ZV}.tar.xz"
           tar -xf /tmp/zig.tar.xz -C /tmp
-          export ZIG_BIN="/tmp/zig-linux-x86_64-${ZV}/zig"
+          export ZIG_BIN="/tmp/zig-x86_64-linux-${ZV}/zig"
           "$ZIG_BIN" version
           OPENTUI_REF=v0.9.4 \
             WORK_DIR="$R/work" \
             OUT_LIB="$R/out/libopentui.android-arm64.so" \
             bash "$R/build/opentui-recipe/build-opentui-android.sh"
           file "$R/out/libopentui.android-arm64.so"
+          readelf -h "$R/out/libopentui.android-arm64.so" | grep -E 'Class|Machine'
+          readelf -d "$R/out/libopentui.android-arm64.so" | grep NEEDED
+          echo "--- symbols FFI check ---"
+          python3 - <<'PYCHK'
+          import re,glob,subprocess,sys
+          src="/data/data/com.termux/files/usr/tmp/oc-latest"
+          js=''.join(open(f).read() for f in glob.glob('chunk-bun-*.js'))
+          req=set(re.findall(r'(ot_[A-Za-z0-9_]+)\s*[:=]\s*\{[^}]{0,400}?\bargs\s*:',js,re.M))
+          lib="$R/out/libopentui.android-arm64.so"
+          out=subprocess.run(['nm','-D','--defined-only',lib],capture_output=True,text=True).stdout
+          have=set(re.findall(r' (ot_[A-Za-z0-9_]+)$',out,re.M))
+          miss=sorted(req-have)
+          print('FFI funcs required',len(req),'present',len(req)-len(miss),'missing',len(miss))
+          if miss: print('MISSING',miss); sys.exit(1)
+          print('SO_FFI_OK')
+          PYCHK
       - uses: actions/upload-artifact@v4
         with:
           name: opentui-so-094
