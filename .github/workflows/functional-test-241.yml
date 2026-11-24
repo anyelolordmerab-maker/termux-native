@@ -136,7 +136,7 @@ jobs:
           mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMPDIR"
           export OPENCODE_DISABLE_MODELS_FETCH=1
           export OPENCODE_DISABLE_AUTOUPDATE=1
-          export OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","model":"local/mock","providers":{"local":{"name":"Mock local","package":"@opencode/ai/providers/openai-compatible","settings":{"baseURL":"http://127.0.0.1:4599/v1","apiKey":"mock"},"models":{"mock":{"name":"Mock","modelID":"mock-model","capabilities":{"tools":false,"input":["text"],"output":["text"]},"limit":{"context":4096,"output":256}}}}}}'
+          export OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","compaction":{"auto":false,"background":false},"model":"local/mock","providers":{"local":{"name":"Mock local","package":"@opencode/ai/providers/openai-compatible","settings":{"baseURL":"http://127.0.0.1:4599/v1","apiKey":"mock"},"models":{"mock":{"name":"Mock","modelID":"mock-model","capabilities":{"tools":false,"input":["text"],"output":["text"]},"limit":{"context":4096,"output":256}}}}}}'
           set +e
           timeout 120 qemu-aarch64-static -L / ./opencode-embedded run --model local/mock "Responde exactamente OPENCODE_MOCK_OK" > run-functional.log 2>&1
           RUN_RC=$?
