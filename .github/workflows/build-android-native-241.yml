@@ -198,6 +198,15 @@ jobs:
           OPENTUI_VERSION=0.9.4 \
           python3 build/android-native/prepare.py
 
+      - name: Preflight iroh asset (resuelve .node en segundos)
+        run: |
+          set -euo pipefail
+          cd /content/oc/packages/cli
+          rm -rf /tmp/irohprobe
+          /content/bin/bun build src/iroh-worker.ts --target=bun --outdir=/tmp/irohprobe > /tmp/irohprobe.log 2>&1 || { cat /tmp/irohprobe.log; exit 1; }
+          cat /tmp/irohprobe.log
+          test -s /tmp/irohprobe/iroh-worker.js
+
       - name: Build (bun-linux-arm64-android)
         env:
           GH_TOKEN: ${{ github.token }}
