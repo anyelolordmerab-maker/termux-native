@@ -73,6 +73,33 @@ jobs:
 
           MODEL = "mock-model"
           MAGIC = "OPENCODE_MOCK_OK"
+          SUMMARY = """## Objective
+- Maintain conversation continuity.
+
+## Requirements
+- (none)
+
+## Decisions
+- (none)
+
+## Work State
+### Completed
+- (none)
+
+### Active
+- (none)
+
+### Blocked
+- (none)
+
+## Next Move
+1. Continue the task.
+
+## Relevant Files
+- (none)
+
+## Important Context
+- (none)"""
 
           def chunk(content, finish):
               return {
@@ -87,18 +114,20 @@ jobs:
                   body = json.loads(self.rfile.read(n) or b"{}")
                   if not self.path.endswith("/chat/completions"):
                       self.send_response(404); self.end_headers(); return
+                  compact = "You MUST use this format for your response" in json.dumps(body)
+                  content = SUMMARY if compact else MAGIC
                   if body.get("stream"):
                       self.send_response(200)
                       self.send_header("content-type", "text/event-stream")
                       self.end_headers()
-                      for obj in (chunk(MAGIC, None), chunk("", "stop")):
+                      for obj in (chunk(content, None), chunk("", "stop")):
                           self.wfile.write(("data: " + json.dumps(obj) + "\n\n").encode())
                       self.wfile.write(b"data: [DONE]\n\n")
                       self.wfile.flush()
                   else:
                       payload = {
                           "id": "mock", "object": "chat.completion", "created": int(time.time()), "model": MODEL,
-                          "choices": [{"index": 0, "message": {"role": "assistant", "content": MAGIC}, "finish_reason": "stop"}],
+                          "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
                           "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
                       }
                       data = json.dumps(payload).encode()
@@ -136,7 +165,7 @@ jobs:
           mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMPDIR"
           export OPENCODE_DISABLE_MODELS_FETCH=1
           export OPENCODE_DISABLE_AUTOUPDATE=1
-          export OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","compaction":{"auto":false,"background":false},"model":"local/mock","providers":{"local":{"name":"Mock local","package":"@opencode/ai/providers/openai-compatible","settings":{"baseURL":"http://127.0.0.1:4599/v1","apiKey":"mock"},"models":{"mock":{"name":"Mock","modelID":"mock-model","capabilities":{"tools":false,"input":["text"],"output":["text"]},"limit":{"context":4096,"output":256}}}}}}'
+          export OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","compaction":{"auto":true,"background":false,"keep":{"tokens":0},"buffer":"1%"},"model":"local/mock","providers":{"local":{"name":"Mock local","package":"@opencode/ai/providers/openai-compatible","settings":{"baseURL":"http://127.0.0.1:4599/v1","apiKey":"mock"},"models":{"mock":{"name":"Mock","modelID":"mock-model","capabilities":{"tools":false,"input":["text"],"output":["text"]},"limit":{"context":4096,"output":256}}}}}}'
           set +e
           timeout 120 qemu-aarch64-static -L / ./opencode-embedded run --model local/mock "Responde exactamente OPENCODE_MOCK_OK" > run-functional.log 2>&1
           RUN_RC=$?
