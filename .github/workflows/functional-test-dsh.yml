@@ -163,7 +163,7 @@ jobs:
           NODE=/data/data/com.termux/files/usr/bin/node
           JS=check/package/node_modules/@deepseek-ai/dsh/lib/bin.js
           set +e
-          script -q -e -c "qemu-aarch64-static -L / $NODE --expose-internals $JS" /dev/null > dsh-tui.log 2>&1
+          script -q -e -c "qemu-aarch64-static -L / $NODE --expose-internals $JS tui" /dev/null > dsh-tui.log 2>&1
           RC=$?
           set -e
           echo "tui_rc=$RC"
