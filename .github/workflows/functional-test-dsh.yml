@@ -32,8 +32,7 @@ jobs:
           mkdir -p work
           sudo mkdir -p /data/data/com.termux/files/usr
           sudo chmod 777 /data/data/com.termux/files
-sudo chmod 777 /data/data/com.termux/files/usr
-
+          sudo chmod 777 /data/data/com.termux/files/usr
       - name: Download release + sha
         run: |
           set -euo pipefail
