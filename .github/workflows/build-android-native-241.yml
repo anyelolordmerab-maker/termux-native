@@ -243,7 +243,7 @@ jobs:
           d=open('opencode-embedded','rb').read()
           print('size', len(d))
           print('ELF_count', d.count(b'\x7fELF'))
-          for s in (b'libopentui', b'libfff_c', b'watcher.node', b'librust_pty', b'opencode-pty'):
+          for s in (b'libopentui', b'libfff_c', b'watcher.node', b'librust_pty', b'opencode-pty', b'iroh.android-arm64.node'):
               print('has', s.decode(), s in d)
           PY
 
