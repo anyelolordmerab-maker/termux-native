@@ -102,6 +102,26 @@ def patch_build(s):
         '    item.os === "android" ? "android" : item.abi,\n    item.avx2 === false ? "baseline" : undefined,',
         1,
     )
+
+    # Android: Bun no embute de forma fiable un paquete cuyo "main" ES el .node.
+    # Lo importamos como archivo (type: "file") y el binding lo carga por ruta.
+    iroh_anchor = '  const irohBindingPlugin: BunPlugin = {'
+    if iroh_anchor not in s:
+        die("irohBindingPlugin anchor")
+    if 'const irohAsset =' not in s:
+        iroh_decl = (
+            '  // Android: el .node se embute como archivo y se carga por ruta.\n'
+            '  const irohAsset = item.os === "android" ? "@number0/iroh-android-arm64/iroh.android-arm64.node" : null\n'
+        )
+        s = s.replace(iroh_anchor, iroh_decl + iroh_anchor, 1)
+    iroh_old = '        contents: `export default async () => ${irohPackage ? `require(${JSON.stringify(irohPackage)})` : "undefined"}`;'
+    iroh_new = '        contents: irohAsset ? `import irohPath from ${JSON.stringify(irohAsset)} with { type: "file" }; export default async () => require(irohPath)` : `export default async () => ${irohPackage ? `require(${JSON.stringify(irohPackage)})` : "undefined"}`;'
+    if iroh_old not in s:
+        iroh_old = iroh_old[:-1] + ','
+        iroh_new = iroh_new[:-1] + ','
+    if iroh_old not in s:
+        die("irohBinding contents anchor")
+    s = s.replace(iroh_old, iroh_new, 1)
     return s
 
 
