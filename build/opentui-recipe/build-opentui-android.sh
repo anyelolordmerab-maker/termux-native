@@ -86,6 +86,13 @@ for f in \
     "$CRT_DIR/libc.so"; do
     [ -r "$f" ] || die "el NDK no aporta '$f' (¿API/arquitectura equivocadas?)"
 done
+# Zig 0.17.1 exige cc_dir no vacio incluso para Android. Apuntamos a un
+# directorio con los CRT de Android con los nombres genericos que espera Zig.
+CC_DIR="$WORK_DIR/cc"
+mkdir -p "$CC_DIR"
+ln -sf "$CRT_DIR/crtbegin_dynamic.o" "$CC_DIR/crtbegin.o"
+ln -sf "$CRT_DIR/crtend_android.o" "$CC_DIR/crtend.o"
+
 mkdir -p "$(dirname "$LIBC_FILE")"
 {
     printf 'include_dir=%s/usr/include\n' "$SYSROOT"
@@ -93,7 +100,7 @@ mkdir -p "$(dirname "$LIBC_FILE")"
     printf 'crt_dir=%s\n' "$CRT_DIR"
     printf 'msvc_lib_dir=\n'
     printf 'kernel32_lib_dir=\n'
-    printf 'cc_dir=%s\n' "$CRT_DIR"
+    printf 'cc_dir=%s\n' "$CC_DIR"
     printf 'darwin_sdk_dir=\n'
 } > "$LIBC_FILE"
 log "libc.txt: $LIBC_FILE"
