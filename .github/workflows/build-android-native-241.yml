@@ -50,24 +50,16 @@ jobs:
         run: |
           set -euo pipefail
           R="$GITHUB_WORKSPACE"
-          mkdir -p /content/otbuild
-          git clone --depth 1 --branch v0.9.4 https://github.com/anomalyco/opentui.git /content/otbuild
-          cd /content/otbuild
+          mkdir -p "$R/out" "$R/work"
           ZV=0.15.2
           curl -fsSL -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZV}/zig-linux-x86_64-${ZV}.tar.xz"
           tar -xf /tmp/zig.tar.xz -C /tmp
-          Z=/tmp/zig-linux-x86_64-${ZV}/zig
-          $Z version
-          bash scripts/update-zig-deps.sh
-          # parche NDK
-          cp packages/native/build.zig packages/native/build.zig.bak
-          OUT=/content/oc-recipe/build/opentui-src/packages/native
-          mkdir -p "$OUT" /content/otsrc/packages/native
-          cp -a packages/native/. "$OUT/"
-          cp packages/native/build.zig.bak /content/otsrc/packages/native/build.zig.bak
-          OPENTUI_REF=v0.9.4 bash "$R/build/opentui-recipe/build-opentui-android.sh"
-          mkdir -p "$R/out"
-          cp /content/libopentui.bionic.so "$R/out/libopentui.android-arm64.so"
+          export ZIG_BIN="/tmp/zig-linux-x86_64-${ZV}/zig"
+          "$ZIG_BIN" version
+          OPENTUI_REF=v0.9.4 \
+            WORK_DIR="$R/work" \
+            OUT_LIB="$R/out/libopentui.android-arm64.so" \
+            bash "$R/build/opentui-recipe/build-opentui-android.sh"
           file "$R/out/libopentui.android-arm64.so"
       - uses: actions/upload-artifact@v4
         with:
