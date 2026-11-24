@@ -203,7 +203,7 @@ jobs:
           set -euo pipefail
           cd /content/oc/packages/cli
           rm -rf /tmp/irohprobe
-          /content/bin/bun build src/iroh-worker.ts --target=bun-linux-arm64-android --outdir=/tmp/irohprobe > /tmp/irohprobe.log 2>&1 || { cat /tmp/irohprobe.log; exit 1; }
+          /content/bin/bun build src/iroh-worker.ts --target=bun --outdir=/tmp/irohprobe > /tmp/irohprobe.log 2>&1 || { cat /tmp/irohprobe.log; exit 1; }
           cat /tmp/irohprobe.log
           test -s /tmp/irohprobe/iroh-worker.js
 
@@ -268,7 +268,7 @@ jobs:
           d=open('opencode-embedded','rb').read()
           print('size', len(d))
           print('ELF_count', d.count(b'\x7fELF'))
-          for s in (b'libopentui', b'libfff_c', b'watcher.node', b'librust_pty', b'opencode-pty', b'iroh.android-arm64.node'):
+          for s in (b'libopentui', b'libfff_c', b'watcher.node', b'librust_pty', b'opencode-pty', b'iroh.android-arm64'):
               print('has', s.decode(), s in d)
           PY
 
@@ -392,7 +392,7 @@ jobs:
           ck('needed_subset_of_phone_libs', needed<=allowed, str(sorted(needed)))
           ck('not_glibc_ld_linux', 'ld-linux' not in blob and 'ld-musl' not in blob)
           ck('android_api_compat', dev['api']>=28, str(dev['api']))
-          for lib in (b'libopentui',b'libfff_c',b'watcher.node',b'librust_pty',b'opencode-pty',b'iroh.android-arm64.node'):
+          for lib in (b'libopentui',b'libfff_c',b'watcher.node',b'librust_pty',b'opencode-pty',b'iroh.android-arm64'):
               ck('embedded_'+lib.decode(), lib in elf)
           ck('elf_count_9', elf.count(b'\x7fELF')>=9, str(elf.count(b'\x7fELF')))
           bad=[n for n,ok in checks if not ok]
