@@ -74,32 +74,32 @@ jobs:
           MODEL = "mock-model"
           MAGIC = "OPENCODE_MOCK_OK"
           SUMMARY = """## Objective
-- Maintain conversation continuity.
+          - Maintain conversation continuity.
 
-## Requirements
-- (none)
+          ## Requirements
+          - (none)
 
-## Decisions
-- (none)
+          ## Decisions
+          - (none)
 
-## Work State
-### Completed
-- (none)
+          ## Work State
+          ### Completed
+          - (none)
 
-### Active
-- (none)
+          ### Active
+          - (none)
 
-### Blocked
-- (none)
+          ### Blocked
+          - (none)
 
-## Next Move
-1. Continue the task.
+          ## Next Move
+          1. Continue the task.
 
-## Relevant Files
-- (none)
+          ## Relevant Files
+          - (none)
 
-## Important Context
-- (none)"""
+          ## Important Context
+          - (none)"""
 
           def chunk(content, finish):
               return {
