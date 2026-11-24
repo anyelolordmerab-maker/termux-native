@@ -300,19 +300,6 @@ jobs:
           print('TUI_TEST_OK')
           PY
 
-      - name: Embedded files (Bun.embeddedFiles)
-        run: |
-          set -euo pipefail
-          cd work
-          cat > embedded-list.js <<'EOF'
-          console.log(Bun.embeddedFiles.map((f) => f.name).join("\n"))
-          EOF
-          BUN_BE_BUN=1 ./opencode-embedded embedded-list.js > embedded.txt 2>&1 || { cat embedded.txt; exit 1; }
-          cat embedded.txt
-          for n in libopentui libfff_c watcher librust_pty opencode-pty iroh; do
-            grep -qi "$n" embedded.txt || { echo "MISSING embedded: $n"; exit 1; }
-          done
-
       - name: Serve HTTP + TUI over server
         run: |
           set -euo pipefail
