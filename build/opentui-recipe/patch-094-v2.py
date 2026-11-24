@@ -28,7 +28,7 @@ if 'var android_ndk_include' not in s:
 
 s = s.replace('    miniaudio_translate.addIncludePath(b.path("src"));\n', '    miniaudio_translate.addIncludePath(b.path("src"));\n    addAndroidNdkIncludes(b, miniaudio_translate);\n', 1)
 s = s.replace('    yoga_translate.addIncludePath(yoga_dep.path(""));\n', '    yoga_translate.addIncludePath(yoga_dep.path(""));\n    addAndroidNdkIncludes(b, yoga_translate);\n', 1)
-s = s.replace('    });\n    module.addImport("yoga", yoga_translate.createModule());\n    addContextABIHeader(b, module, optimize, target);\n}', '    });\n    module.addImport("yoga", yoga_translate.createModule());\n    addAndroidNdkIncludes(b, yoga_translate);\n    addContextABIHeader(b, module, optimize, target);\n}', 1)
+s = s.replace('    });\n    module.addImport("context_abi_c", header.createModule());', '    });\n    addAndroidNdkIncludes(b, header);\n    module.addImport("context_abi_c", header.createModule());', 1)
 
 s = s.replace('''        .linux => {
             module.linkSystemLibrary("dl", .{});
