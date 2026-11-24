@@ -122,6 +122,17 @@ def patch_build(s):
     if iroh_old not in s:
         die("irohBinding contents anchor")
     s = s.replace(iroh_old, iroh_new, 1)
+
+    # El handler de machine carga Iroh con import dinamico; Bun no siempre lo
+    # incluye en el grafo del --compile. Un entrypoint estatico lo fuerza.
+    ep_old = 'entrypoints: ["./src/index.ts", "./src/photon-worker.ts", "./src/claude-folder-worker.ts"],'
+    ep_new = 'entrypoints: ["./src/index.ts", "./src/photon-worker.ts", "./src/claude-folder-worker.ts", "./src/iroh-worker.ts"],'
+    if ep_old in s:
+        s = s.replace(ep_old, ep_new, 1)
+    elif "./src/iroh-worker.ts" not in s:
+        die("entrypoints anchor")
+    worker = os.path.normpath(os.path.join(os.path.dirname(p), "..", "src", "iroh-worker.ts"))
+    write(worker, 'import { Iroh } from "@opencode/core/machine/iroh"\nexport default Iroh\n')
     return s
 
 
