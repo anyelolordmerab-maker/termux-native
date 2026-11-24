@@ -132,7 +132,7 @@ def patch_build(s):
     elif "./src/iroh-worker.ts" not in s:
         die("entrypoints anchor")
     worker = os.path.normpath(os.path.join(os.path.dirname(bt), "..", "src", "iroh-worker.ts"))
-    write(worker, 'import { Iroh } from "@opencode/core/machine/iroh"\nexport default Iroh\n')
+    write(worker, 'import irohAsset from "@number0/iroh-android-arm64/iroh.android-arm64.node" with { type: "file" }\nexport default irohAsset\n')
     return s
 
 
