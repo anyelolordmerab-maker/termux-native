@@ -42,7 +42,7 @@ jobs:
           curl -fsSL -o "work/$T" "$R/$T"
           curl -fsSL -o "work/$T.sha256" "$R/$T.sha256"
           cd work
-          sed -E 's#.*/##' "$T.sha256" > "$T.sha256.fixed"
+          awk '{print $1 "  " $NF}' "$T.sha256" > "$T.sha256.fixed"
           sha256sum -c "$T.sha256.fixed"
           tar --zstd -xf "$T"
           test -x check/package/bin/dsh
@@ -71,7 +71,11 @@ jobs:
           mkdir -p /tmp/ndeb && cd /tmp/ndeb
           curl -fsSL -o node.deb https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_26.13.1_aarch64.deb
           ar x node.deb
-          tar --zstd -xf data.tar.zst -C /
+          if tar --zstd -tf data.tar.zst >/dev/null 2>&1; then
+            tar --zstd -xf data.tar.zst -C /
+          else
+            tar -xf data.tar.zst -C /
+          fi
           NODE=/data/data/com.termux/files/usr/bin/node
           test -x "$NODE"
           export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
