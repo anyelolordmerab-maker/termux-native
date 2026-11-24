@@ -136,7 +136,9 @@ jobs:
           curl -fsSL -o /tmp/opentui94.tgz "https://registry.npmjs.org/@opentui/core-linux-arm64-musl/-/core-linux-arm64-musl-0.9.4.tgz"
           mkdir -p /tmp/opentui94 && tar xzf /tmp/opentui94.tgz -C /tmp/opentui94 --strip-components=1
           cp /tmp/opentui94/libopentui.so /content/libopentui.bionic.so
-          test -s /content/libopentui.bionic.so
+          # ELF needed is libc.so only; bionic libm symbols (sinh/cosh/...) must be
+          # preloaded via LD_PRELOAD equivalent: Bun dlopen searches global scope,
+          # and the main executable already links libm, so no extra action needed.
           # npm: versiones EXACTAS que usa opencode 2.4.1
           curl -fsSL -o work/vendor/watcher.tgz "https://registry.npmjs.org/@parcel/watcher-android-arm64/-/watcher-android-arm64-2.5.1.tgz"
           mkdir -p work/vendor/watcher && tar xzf work/vendor/watcher.tgz -C work/vendor/watcher
@@ -261,7 +263,7 @@ jobs:
           set -euo pipefail
           cd work
           set +e
-          timeout 55 script -q -e -c "./opencode-embedded" /dev/null > tui.log 2>&1
+          timeout 55 script -q -e -c "env LD_PRELOAD=/system/lib64/libm.so ./opencode-embedded" /dev/null > tui.log 2>&1
           echo "tui_exit=$?"
           set -e
           wc -c tui.log
@@ -302,7 +304,7 @@ jobs:
           if [ "$ok" != "1" ]; then echo "SERVE_FAIL"; kill $SRV 2>/dev/null || true; exit 1; fi
           export OPENCODE_PASSWORD="$PW" OPENCODE_SERVER_PASSWORD="$PW"
           set +e
-          timeout 40 script -q -e -c "./opencode-embedded --server http://127.0.0.1:4517" /dev/null > tui_srv.log 2>&1
+          timeout 40 script -q -e -c "env LD_PRELOAD=/system/lib64/libm.so ./opencode-embedded --server http://127.0.0.1:4517" /dev/null > tui_srv.log 2>&1
           echo "tui_srv_exit=$?"
           set -e
           kill $SRV 2>/dev/null || true
