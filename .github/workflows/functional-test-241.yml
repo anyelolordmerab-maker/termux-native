@@ -1,0 +1,147 @@
+name: functional-test-241
+
+# Prueba funcional ligera: NO recompila nada. Descarga el release publicado,
+# monta el rootfs bionic y ejecuta un prompt real contra un modelo OpenAI-compatible
+# local (mock). Valida que el binario hace una respuesta de agente de verdad.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag del release"
+        type: string
+        default: "opencode-v2.4.1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: functional-test-${{ inputs.tag }}
+  cancel-in-progress: true
+
+jobs:
+  functional:
+    name: Prompt real (bionic, desde release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd file binutils curl python3 coreutils
+          mkdir -p work /data
+          sudo chmod 777 /data
+
+      - name: Download release (.tar.zst + .sha256)
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
+          R="https://github.com/anyelolordmerab-maker/termux-native/releases/download/$TAG"
+          curl -fsSL -o work/opencode.tar.zst "$R/opencode-embedded-2.4.1.tar.zst"
+          curl -fsSL -o work/opencode.tar.zst.sha256 "$R/opencode-embedded-2.4.1.tar.zst.sha256"
+          cd work && sha256sum -c opencode.tar.zst.sha256
+          tar --zstd -xf opencode.tar.zst
+          file opencode-embedded
+          readelf -h opencode-embedded | grep -E 'Class|Machine|Type'
+
+      - name: Bionic rootfs -> /system
+        run: |
+          set -euo pipefail
+          cd work
+          R=https://github.com/anyelolordmerab-maker/termux-native/releases/download
+          curl -fsSL -o bionic.tgz "$R/toolchain/bionic-a14.tgz"
+          mkdir -p bionic && tar -xzf bionic.tgz -C bionic
+          LINKER=$(find bionic -name linker64 | head -1)
+          LIBC=$(find bionic -name libc.so | head -1)
+          LIBDIR=$(dirname "$LIBC")
+          test -n "$LINKER" && test -n "$LIBC"
+          sudo mkdir -p /system/bin /system/lib64 /linkerconfig
+          sudo cp "$LINKER" /system/bin/linker64
+          sudo cp -a "$LIBDIR"/. /system/lib64/ || true
+          sudo find bionic -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -n {} /system/lib64/ \; 2>/dev/null || true
+          sudo chmod 755 /system/bin/linker64
+          file /system/bin/linker64
+
+      - name: Mock modelo OpenAI-compatible (Python)
+        run: |
+          set -euo pipefail
+          cat > /tmp/mock_model.py <<'PY'
+          import json, time
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+
+          MODEL = "mock-model"
+          MAGIC = "OPENCODE_MOCK_OK"
+
+          def chunk(content, finish):
+              return {
+                  "id": "mock", "object": "chat.completion.chunk",
+                  "created": int(time.time()), "model": MODEL,
+                  "choices": [{"index": 0, "delta": ({"role": "assistant", "content": content} if content else {}), "finish_reason": finish}],
+              }
+
+          class H(BaseHTTPRequestHandler):
+              def do_POST(self):
+                  n = int(self.headers.get("content-length", "0") or 0)
+                  body = json.loads(self.rfile.read(n) or b"{}")
+                  if not self.path.endswith("/chat/completions"):
+                      self.send_response(404); self.end_headers(); return
+                  if body.get("stream"):
+                      self.send_response(200)
+                      self.send_header("content-type", "text/event-stream")
+                      self.end_headers()
+                      for obj in (chunk(MAGIC, None), chunk("", "stop")):
+                          self.wfile.write(("data: " + json.dumps(obj) + "\n\n").encode())
+                      self.wfile.write(b"data: [DONE]\n\n")
+                      self.wfile.flush()
+                  else:
+                      payload = {
+                          "id": "mock", "object": "chat.completion", "created": int(time.time()), "model": MODEL,
+                          "choices": [{"index": 0, "message": {"role": "assistant", "content": MAGIC}, "finish_reason": "stop"}],
+                          "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                      }
+                      data = json.dumps(payload).encode()
+                      self.send_response(200)
+                      self.send_header("content-type", "application/json")
+                      self.send_header("content-length", str(len(data)))
+                      self.end_headers()
+                      self.wfile.write(data)
+              def log_message(self, *a):
+                  pass
+
+          HTTPServer(("127.0.0.1", 4599), H).serve_forever()
+          PY
+          python3 -m py_compile /tmp/mock_model.py
+          python3 /tmp/mock_model.py > mock-model.log 2>&1 &
+          echo $! > mock-model.pid
+          for i in $(seq 1 30); do
+            curl -fsS -X POST http://127.0.0.1:4599/v1/chat/completions \
+              -H 'content-type: application/json' -d '{"model":"mock-model"}' >/dev/null && break
+            sleep 0.5
+          done
+          curl -fsS -X POST http://127.0.0.1:4599/v1/chat/completions \
+            -H 'content-type: application/json' -d '{"model":"mock-model"}' | grep -q OPENCODE_MOCK_OK
+
+      - name: Run prompt real (bionic)
+        run: |
+          set -euo pipefail
+          cd work
+          export HOME="$PWD/home"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CACHE_HOME="$HOME/.cache"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          export XDG_STATE_HOME="$HOME/.local/state"
+          export TMPDIR="$PWD/tmp"
+          mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMPDIR"
+          export OPENCODE_DISABLE_MODELS_FETCH=1
+          export OPENCODE_DISABLE_AUTOUPDATE=1
+          export OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","model":"local/mock","providers":{"local":{"name":"Mock local","package":"@opencode/ai/providers/openai-compatible","settings":{"baseURL":"http://127.0.0.1:4599/v1","apiKey":"mock"},"models":{"mock":{"name":"Mock","modelID":"mock-model","capabilities":{"tools":false,"input":["text"],"output":["text"]},"limit":{"context":4096,"output":256}}}}}}'
+          timeout 120 ./opencode-embedded run --model local/mock "Responde exactamente OPENCODE_MOCK_OK" > run-functional.log 2>&1
+          cat run-functional.log
+          grep -q 'OPENCODE_MOCK_OK' run-functional.log || { echo FUNCTIONAL_FAIL; exit 1; }
+          echo FUNCTIONAL_OK
+
+      - name: Cleanup mock
+        if: always()
+        run: |
+          [ -f mock-model.pid ] && kill "$(cat mock-model.pid)" 2>/dev/null || true
