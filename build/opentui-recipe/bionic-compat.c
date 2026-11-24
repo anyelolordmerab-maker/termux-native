@@ -1,19 +1,28 @@
-/* Shims para simbolos glibc/musl que bionic no exporta.
- * libopentui.so (0.9.4) referencia ambos; sin estos stubs dlopen falla
- * en el telefono con "cannot locate symbol". */
+/* Shims para símbolos que Bionic no exporta.
+ *
+ * - __errno_location: glibc/musl lo usan; Bionic expone __errno().
+ * - pthread_tryjoin_np: OpenTUI lo usa en clipboard/host.zig para reap
+ *   hilos sin bloquear. Bionic no tiene timedjoin/tryjoin; comprobamos
+ *   con pthread_kill(thread, 0) y solo hacemos join si ya terminó.
+ */
 #define _GNU_SOURCE
 #include <errno.h>
 #include <pthread.h>
-#include <time.h>
 
 extern int *__errno(void);
-extern int pthread_timedjoin_np(pthread_t, void **, const struct timespec *);
 
 int *__errno_location(void) {
     return __errno();
 }
 
 int pthread_tryjoin_np(pthread_t thread, void **retval) {
-    struct timespec ts = {0, 0};
-    return pthread_timedjoin_np(thread, retval, &ts);
+    int rc = pthread_kill(thread, 0);
+    if (rc == ESRCH) {
+        /* El hilo ya terminó: pthread_join solo recoge el resultado. */
+        return pthread_join(thread, retval);
+    }
+    if (rc == 0) {
+        return EBUSY;
+    }
+    return rc;
 }
