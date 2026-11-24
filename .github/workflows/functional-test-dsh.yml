@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd file binutils curl python3 coreutils qemu-user-static
+          sudo apt-get install -y -qq zstd xz-utils file binutils curl python3 coreutils qemu-user-static
           mkdir -p work
           sudo mkdir -p /data/data/com.termux/files/usr
           sudo chmod 777 /data/data/com.termux/files
@@ -70,20 +70,38 @@ jobs:
           sudo chmod 755 /system/bin/linker64
           file /system/bin/linker64
 
-      - name: Node aarch64 (Termux .deb)
+      - name: Node aarch64 + libs (Termux .debs)
         run: |
           set -euo pipefail
-          mkdir -p /tmp/ndeb && cd /tmp/ndeb
-          curl -fsSL -o node.deb https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_26.13.1_aarch64.deb
-          ar x node.deb
-          if tar --zstd -tf data.tar.zst >/dev/null 2>&1; then
-            tar --zstd -xf data.tar.zst -C /
-          else
-            tar -xf data.tar.zst -C /
-          fi
-          NODE=/data/data/com.termux/files/usr/bin/node
+          POOL=https://packages.termux.dev/apt/termux-main/pool/main
+          PREFIX=/data/data/com.termux/files/usr
+          DEBS="
+            n/nodejs/nodejs_26.13.1_aarch64.deb
+            libc/libc++/libc++_30_aarch64.deb
+            o/openssl/openssl_1%3A3.6.5_aarch64.deb
+            c/c-ares/c-ares_1.34.9_aarch64.deb
+            libi/libicu/libicu_79.1_aarch64.deb
+            libs/libsqlite/libsqlite_3.54.1-1_aarch64.deb
+            z/zlib/zlib_1.4_aarch64.deb
+            libf/libffi/libffi_3.8.1_aarch64.deb
+          "
+          for rel in $DEBS; do
+            echo "=== $rel ==="
+            rm -rf /tmp/ndeb && mkdir -p /tmp/ndeb
+            cd /tmp/ndeb
+            curl -fsSL -o pkg.deb "$POOL/$rel"
+            ar x pkg.deb
+            DATA=$(ls data.tar.* 2>/dev/null | head -1)
+            [ -n "$DATA" ] || { echo "sin data.tar en $rel"; exit 1; }
+            tar -xf "$DATA" -C /
+          done
+          # rg del paquete de Termux (el symlink del release apunta aquí)
+          mkdir -p "$PREFIX/bin"
+          printf '#!/bin/sh\nexit 1\n' > "$PREFIX/bin/rg"
+          chmod 755 "$PREFIX/bin/rg"
+          NODE="$PREFIX/bin/node"
           test -x "$NODE"
-          export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
+          export LD_LIBRARY_PATH="$PREFIX/lib"
           qemu-aarch64-static -L / "$NODE" --version
 
       - name: Native bundle checks
@@ -112,6 +130,7 @@ jobs:
           set -euo pipefail
           cd work
           export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
+          export PATH=/data/data/com.termux/files/usr/bin:$PATH
           NODE=/data/data/com.termux/files/usr/bin/node
           JS=check/package/node_modules/@deepseek-ai/dsh/lib/bin.js
           qemu-aarch64-static -L / "$NODE" --expose-internals "$JS" --version 2>&1 | tee dsh-version.log
@@ -130,6 +149,7 @@ jobs:
           export TMPDIR="$PWD/tmp"
           mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMPDIR"
           export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
+          export PATH=/data/data/com.termux/files/usr/bin:$PATH
           NODE=/data/data/com.termux/files/usr/bin/node
           JS=check/package/node_modules/@deepseek-ai/dsh/lib/bin.js
           set +e
