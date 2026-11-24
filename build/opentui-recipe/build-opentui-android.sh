@@ -93,7 +93,7 @@ mkdir -p "$(dirname "$LIBC_FILE")"
     printf 'crt_dir=%s\n' "$CRT_DIR"
     printf 'msvc_lib_dir=\n'
     printf 'kernel32_lib_dir=\n'
-    printf 'gcc_dir=\n'
+    printf 'cc_dir=%s\n' "$CRT_DIR"
     printf 'darwin_sdk_dir=\n'
 } > "$LIBC_FILE"
 log "libc.txt: $LIBC_FILE"
