@@ -17,7 +17,7 @@ def sub(old, new, label):
     s = s.replace(old, new, 1)
 
 
-helper = '''fn addAndroidNdkIncludes(b: *std.Build, step: *std.Build.Step.TranslateC) void {
+helper = '''fn addAndroidNdkIncludes(step: *std.Build.Step.TranslateC) void {
     const inc = android_ndk_include orelse return;
     const arch_inc = android_ndk_arch_include orelse return;
     step.addIncludePath(.{ .cwd_relative = inc });
@@ -46,15 +46,15 @@ if 'var android_ndk_include' not in s:
     sub(build_marker, globals_decl + build_opts, 'build options')
 
 sub('    miniaudio_translate.addIncludePath(b.path("src"));\n',
-    '    miniaudio_translate.addIncludePath(b.path("src"));\n    addAndroidNdkIncludes(b, miniaudio_translate);\n',
+    '    miniaudio_translate.addIncludePath(b.path("src"));\n    addAndroidNdkIncludes(miniaudio_translate);\n',
     'miniaudio NDK includes')
 
 sub('    yoga_translate.addIncludePath(yoga_dep.path(""));\n',
-    '    yoga_translate.addIncludePath(yoga_dep.path(""));\n    addAndroidNdkIncludes(b, yoga_translate);\n',
+    '    yoga_translate.addIncludePath(yoga_dep.path(""));\n    addAndroidNdkIncludes(yoga_translate);\n',
     'yoga NDK includes')
 
 sub('    });\n    module.addImport("context_abi_c", header.createModule());',
-    '    });\n    addAndroidNdkIncludes(b, header);\n    module.addImport("context_abi_c", header.createModule());',
+    '    });\n    addAndroidNdkIncludes(header);\n    module.addImport("context_abi_c", header.createModule());',
     'context ABI NDK includes')
 
 sub('''        .linux => {
