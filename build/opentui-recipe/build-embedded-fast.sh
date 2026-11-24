@@ -14,8 +14,12 @@ say(){ echo "[$(date +%H:%M:%S)] $*" | tee -a $L; }
 # 0) bun 1.4.5
 if [ ! -x /content/bin/bun ]; then
   say "0 bun 1.4.5"
-  curl -fsSL -o /tmp/b.zip https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-linux-x64.zip
-  (cd /tmp && unzip -oq b.zip && cp bun-linux-x64/bun /content/bin/bun && chmod +x /content/bin/bun)
+  case "$(uname -m)" in
+    aarch64|arm64) BUN_ARCH=aarch64 ;;
+    *) BUN_ARCH=x64 ;;
+  esac
+  curl -fsSL -o /tmp/b.zip https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-linux-${BUN_ARCH}.zip
+  (cd /tmp && unzip -oq b.zip && cp bun-linux-${BUN_ARCH}/bun /content/bin/bun && chmod +x /content/bin/bun)
 fi
 export PATH=/content/bin:$PATH
 bun -v >/dev/null || { say "FATAL bun"; exit 1; }

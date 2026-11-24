@@ -35,6 +35,45 @@ env:
   TERM: xterm-256color
 
 jobs:
+  opentui-so:
+    name: Build bionic libopentui.so 0.9.4 (NDK)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl xz-utils file binutils python3 git cmake perl make
+          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}" >> "$GITHUB_ENV"
+      - name: Build .so
+        run: |
+          set -euo pipefail
+          R="$GITHUB_WORKSPACE"
+          mkdir -p /content/otbuild
+          git clone --depth 1 --branch v0.9.4 https://github.com/anomalyco/opentui.git /content/otbuild
+          cd /content/otbuild
+          ZV=0.15.2
+          curl -fsSL -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZV}/zig-linux-x86_64-${ZV}.tar.xz"
+          tar -xf /tmp/zig.tar.xz -C /tmp
+          Z=/tmp/zig-linux-x86_64-${ZV}/zig
+          $Z version
+          bash scripts/update-zig-deps.sh
+          # parche NDK
+          cp packages/native/build.zig packages/native/build.zig.bak
+          OUT=/content/oc-recipe/build/opentui-src/packages/native
+          mkdir -p "$OUT" /content/otsrc/packages/native
+          cp -a packages/native/. "$OUT/"
+          cp packages/native/build.zig.bak /content/otsrc/packages/native/build.zig.bak
+          OPENTUI_REF=v0.9.4 bash "$R/build/opentui-recipe/build-opentui-android.sh"
+          mkdir -p "$R/out"
+          cp /content/libopentui.bionic.so "$R/out/libopentui.android-arm64.so"
+          file "$R/out/libopentui.android-arm64.so"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opentui-so-094
+          path: out/libopentui.android-arm64.so
+
   native-modules:
     name: NDK native modules (bun-pty)
     runs-on: ubuntu-24.04
@@ -94,7 +133,7 @@ jobs:
 
   build:
     name: Build + validate (aarch64 native)
-    needs: native-modules
+    needs: [native-modules, opentui-so]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 75
     steps:
@@ -119,6 +158,12 @@ jobs:
         with:
           name: android-native-modules
           path: work/native
+      - uses: actions/download-artifact@v4
+        with:
+          name: opentui-so-094
+          path: work/so
+      - name: Use bionic-built opentui .so
+        run: cp work/so/libopentui.android-arm64.so /content/libopentui.bionic.so
 
       - name: Cache bun
         uses: actions/cache@v4
@@ -133,12 +178,7 @@ jobs:
           R=https://github.com/anyelolordmerab-maker/termux-native/releases/download
           curl -fsSL -o /tmp/oc.tgz "https://codeload.github.com/anomalyco/opencode/tar.gz/refs/tags/v$VER"
           mkdir -p /content/oc && tar xzf /tmp/oc.tgz -C /content/oc --strip-components=1
-          curl -fsSL -o /tmp/opentui94.tgz "https://registry.npmjs.org/@opentui/core-linux-arm64-musl/-/core-linux-arm64-musl-0.9.4.tgz"
-          mkdir -p /tmp/opentui94 && tar xzf /tmp/opentui94.tgz -C /tmp/opentui94 --strip-components=1
-          cp /tmp/opentui94/libopentui.so /content/libopentui.bionic.so
-          # ELF needed is libc.so only; bionic libm symbols (sinh/cosh/...) must be
-          # preloaded via LD_PRELOAD equivalent: Bun dlopen searches global scope,
-          # and the main executable already links libm, so no extra action needed.
+          # libopentui.so biónico se descarga del job opentui-so (compilado con NDK).
           # npm: versiones EXACTAS que usa opencode 2.4.1
           curl -fsSL -o work/vendor/watcher.tgz "https://registry.npmjs.org/@parcel/watcher-android-arm64/-/watcher-android-arm64-2.5.1.tgz"
           mkdir -p work/vendor/watcher && tar xzf work/vendor/watcher.tgz -C work/vendor/watcher
@@ -263,7 +303,7 @@ jobs:
           set -euo pipefail
           cd work
           set +e
-          timeout 55 script -q -e -c "env LD_PRELOAD=/system/lib64/libm.so ./opencode-embedded" /dev/null > tui.log 2>&1
+          timeout 55 script -q -e -c "./opencode-embedded" /dev/null > tui.log 2>&1
           echo "tui_exit=$?"
           set -e
           wc -c tui.log
@@ -304,7 +344,7 @@ jobs:
           if [ "$ok" != "1" ]; then echo "SERVE_FAIL"; kill $SRV 2>/dev/null || true; exit 1; fi
           export OPENCODE_PASSWORD="$PW" OPENCODE_SERVER_PASSWORD="$PW"
           set +e
-          timeout 40 script -q -e -c "env LD_PRELOAD=/system/lib64/libm.so ./opencode-embedded --server http://127.0.0.1:4517" /dev/null > tui_srv.log 2>&1
+          timeout 40 script -q -e -c "./opencode-embedded --server http://127.0.0.1:4517" /dev/null > tui_srv.log 2>&1
           echo "tui_srv_exit=$?"
           set -e
           kill $SRV 2>/dev/null || true

@@ -22,7 +22,7 @@
 #   OUT_LIB            destino de la .so             (<repo>/native/libopentui.android-arm64.so)
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPENTUI_REF="${OPENTUI_REF:-v0.5.9}"
 OPENTUI_REPO="${OPENTUI_REPO:-https://github.com/anomalyco/opentui.git}"
 OPENTUI_TARGET="${OPENTUI_TARGET:-aarch64-linux-android.24}"
@@ -125,7 +125,7 @@ fi
 
 # --- 3.5 parche del build.zig: los translate-c necesitan los headers del NDK
 # (si no, 'pthread.h'/'math.h' not found; ver ci/patch-opentui-android-translate-c.py)
-python3 "$REPO_ROOT/ci/patch-opentui-android-translate-c.py" "$NATIVE_DIR/build.zig"
+python3 "$REPO_ROOT/patch-094-v2.py" "$NATIVE_DIR/build.zig"
 NDK_INCLUDE="$SYSROOT/usr/include"
 NDK_ARCH_INCLUDE="$SYSROOT/usr/include/$ANDROID_TRIPLE"
 NDK_LIB="$SYSROOT/usr/lib/$ANDROID_TRIPLE/$ANDROID_API"
@@ -148,7 +148,7 @@ log "zig build (release, target $OPENTUI_TARGET)"
     -Dndk-include="$NDK_INCLUDE" \
     -Dndk-arch-include="$NDK_ARCH_INCLUDE" \
     -Dndk-lib="$NDK_LIB" \
-    -Dbionic-compat-c="$REPO_ROOT/ci/bionic-compat.c" \
+    -Dbionic-compat-c="$REPO_ROOT/bionic-compat.c" \
     --libc "$LIBC_FILE" \
     --prefix "$PREFIX" \
     --cache-dir "$ZIG_LOCAL_CACHE_DIR" \
@@ -165,5 +165,5 @@ cp -f "$BUILT" "$OUT_LIB"
 log "artefacto: $OUT_LIB ($(du -h "$OUT_LIB" | cut -f1))"
 
 # --- 5. verificación de contrato (AArch64 DYN + NEEDED libc.so + 397 símbolos FFI)
-bash "$REPO_ROOT/ci/verify-libopentui.sh" "$OUT_LIB" --ndk-lib "$NDK_LIB"
+bash "$REPO_ROOT/verify-libopentui.sh" "$OUT_LIB" --ndk-lib "$NDK_LIB"
 readelf -h "$OUT_LIB" | grep -E 'Class|Machine|Type' | sed 's/^/  /'
