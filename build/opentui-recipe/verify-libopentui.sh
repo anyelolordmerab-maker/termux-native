@@ -93,6 +93,14 @@ if ! grep -qx 'libc\.so' "$TMPDIR_SELF/needed.txt"; then
     exit 4
 fi
 
+# Yoga es C++: exigimos libc++ estática de Zig. Una NEEDED libc++_shared.so
+# rompería el requisito de binario único (y en Termux suele no estar en el
+# namespace del linker), aunque los símbolos parezcan resolverse.
+if grep -Eq 'libc\+\+(_shared)?\.so' "$TMPDIR_SELF/needed.txt"; then
+    echo "error: '$LIB' enlaza libc++ dinámica ($(grep -E 'libc\+\+' "$TMPDIR_SELF/needed.txt" | tr '\n' ' ')); Yoga debe usar la libc++ estática de Zig" >&2
+    exit 8
+fi
+
 if [ ! -f "$REQUIRED" ]; then
     echo "error: falta la lista de símbolos requeridos '$REQUIRED'" >&2
     exit 1
