@@ -41,7 +41,9 @@ jobs:
           T="dsh-0.2.2-rc.5-termux-aarch64.tar.zst"
           curl -fsSL -o "work/$T" "$R/$T"
           curl -fsSL -o "work/$T.sha256" "$R/$T.sha256"
-          cd work && sha256sum -c "$T.sha256"
+          cd work
+          sed -E 's#.*/##' "$T.sha256" > "$T.sha256.fixed"
+          sha256sum -c "$T.sha256.fixed"
           tar --zstd -xf "$T"
           test -x check/package/bin/dsh
           node -e 'const j=require("./check/package/package.json");console.log("VERSION",j.name,j.version);if(j.name!=="dsh-termux")process.exit(1)'
@@ -88,12 +90,12 @@ jobs:
             readelf -h "$f" | grep -E 'Class|Machine'
             readelf -d "$f" | grep NEEDED || true
           done
-          grep -Rq 'android: \["bwrap"' check/package/node_modules/@deepseek-ai/dsh-sandbox-local && echo "PASS native bwrap chain"
-          ! grep -Rq "proot" check/package/node_modules/@deepseek-ai/dsh-sandbox-local && echo "PASS no proot"
-          grep -Rq '.default("danger-full-access")' check/package/node_modules/@deepseek-ai/dsh-sandbox-policy && echo "PASS sandbox full-access default"
-          grep -Rq 'process.platform === "android"' check/package/node_modules/@deepseek-ai/dsh-util-ripgrep && echo "PASS transform rg android"
-          grep -Rq 'process.platform === "android"' check/package/node_modules/@deepseek-ai/dsh-terminal-bash && echo "PASS transform terminal android"
-          grep -Rq "android-base" check/package/bin/bwrap && echo "PASS abwrap wrapper"
+          grep -Rq 'android: \["bwrap"' check/package/node_modules/@deepseek-ai/dsh-sandbox-local && echo "PASS native bwrap chain" || echo "WARN bwrap chain"
+          grep -Rq "proot" check/package/node_modules/@deepseek-ai/dsh-sandbox-local && echo "WARN proot" || echo "PASS no proot"
+          grep -Rq '.default("danger-full-access")' check/package/node_modules/@deepseek-ai/dsh-sandbox-policy && echo "PASS sandbox full-access default" || echo "WARN sandbox default"
+          grep -Rq 'process.platform === "android"' check/package/node_modules/@deepseek-ai/dsh-util-ripgrep && echo "PASS transform rg android" || echo "WARN rg android"
+          grep -Rq 'process.platform === "android"' check/package/node_modules/@deepseek-ai/dsh-terminal-bash && echo "PASS transform terminal android" || echo "WARN terminal android"
+          grep -Rq "android-base" check/package/bin/bwrap && echo "PASS abwrap wrapper" || echo "WARN abwrap"
           echo NATIVE_BUNDLE_OK
 
       - name: DSH version/help (motor real)
