@@ -96,9 +96,9 @@ jobs:
             sudo tar -xf "$DATA" -C /
           done
           # rg del paquete de Termux (el symlink del release apunta aquí)
-          mkdir -p "$PREFIX/bin"
-          printf '#!/bin/sh\nexit 1\n' > "$PREFIX/bin/rg"
-          chmod 755 "$PREFIX/bin/rg"
+          sudo mkdir -p "$PREFIX/bin"
+          printf '#!/bin/sh\nexit 1\n' | sudo tee "$PREFIX/bin/rg" >/dev/null
+          sudo chmod 755 "$PREFIX/bin/rg"
           NODE="$PREFIX/bin/node"
           test -x "$NODE"
           export LD_LIBRARY_PATH="$PREFIX/lib"
