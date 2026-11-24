@@ -120,6 +120,8 @@ log "commit: $(git -C "$SRC_DIR" rev-parse HEAD)"
 # --- 3. dependencias Zig (uucode/yoga/ghostty) desde el vendor del repo
 if [ ! -f "$NATIVE_DIR/zig-deps/.ready" ]; then
     log "preparando dependencias Zig (descarga de uucode/yoga/ghostty)"
+    mkdir -p "$WORK_DIR/tmp"
+    export TMPDIR="$WORK_DIR/tmp"
     ( cd "$NATIVE_DIR" && sh src/vendor/update-zig-deps.sh && sh scripts/prepare-zig-deps.sh )
 fi
 
