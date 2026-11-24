@@ -52,7 +52,7 @@ jobs:
           R="$GITHUB_WORKSPACE"
           mkdir -p "$R/out" "$R/work"
           ZV=0.15.2
-          curl -fsSL -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZV}/zig-linux-x86_64-${ZV}.tar.xz"
+          curl -fsSL -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZV}/zig-x86_64-linux-${ZV}.tar.xz"
           tar -xf /tmp/zig.tar.xz -C /tmp
           export ZIG_BIN="/tmp/zig-linux-x86_64-${ZV}/zig"
           "$ZIG_BIN" version
