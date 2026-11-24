@@ -20,18 +20,55 @@ TAG="${TAG:-opencode-v2.4.1}"
 ASSET="opencode-embedded-2.4.1.tar.zst"
 SHA="${ASSET}.sha256"
 BASE="https://github.com/${REPO}/releases/download/${TAG}"
-MODE="isolated"
+MODE=""
 DEST="${HOME}/.local/opencode-241"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "[instalar] $*"; }
 
 case "${1:-}" in
-  --isolated|"") MODE="isolated" ;;
+  --isolated) MODE="isolated" ;;
   --live) MODE="live" ;;
   -h|--help) sed -n '1,20p' "$0"; exit 0 ;;
+  "") ;;
   *) die "opción desconocida: $1 (usa --isolated o --live)" ;;
 esac
+
+# Modo interactivo: si ya hay un opencode, por defecto AISLADO para no romperlo.
+if [ -z "$MODE" ]; then
+  if command -v opencode >/dev/null 2>&1 || [ -e "${PREFIX:-}/bin/opencode" ]; then
+    echo
+    echo "Detecté un opencode instalado. El modo LIVE lo reemplazaría y podría"
+    echo "afectar sus sesiones/configuración. El modo AISLADO crea otro HOME/XDG"
+    echo "y el comando opencode241, sin tocar el que ya funciona."
+    echo
+    echo "  1) Aislado  -> \$HOME/.local/opencode-241 + opencode241  (recomendado)"
+    echo "  2) Live     -> reemplaza \$PREFIX/bin/opencode (con backup)"
+    printf "Elige [1/2] (1): "
+    read -r ans || ans=""
+    case "$ans" in
+      2|2*) MODE="live" ;;
+      *) MODE="isolated" ;;
+    esac
+  else
+    echo
+    echo "No detecté un opencode instalado."
+    echo "  1) Live     -> instala en \$PREFIX/bin/opencode"
+    echo "  2) Aislado  -> \$HOME/.local/opencode-241 + opencode241"
+    printf "Elige [1/2] (1): "
+    read -r ans || ans=""
+    case "$ans" in
+      2|2*) MODE="isolated" ;;
+      *) MODE="live" ;;
+    esac
+  fi
+fi
+
+if [ "$MODE" = "live" ] && [ "${1:-}" != "--live" ]; then
+  printf "CONFIRMA reemplazar \$PREFIX/bin/opencode [s/N]: "
+  read -r ok || ok=""
+  case "$ok" in s|si|S|SI) ;; *) die "cancelado por el usuario" ;; esac
+fi
 
 [ "$(uname -m)" = "aarch64" ] || die "este binario es aarch64; tu arquitectura es $(uname -m)"
 command -v curl >/dev/null || die "falta curl"
