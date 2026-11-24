@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq zstd file binutils curl python3 coreutils
+          sudo apt-get install -y -qq zstd file binutils curl python3 coreutils qemu-user-static
           mkdir -p work
           sudo mkdir -p /data
           sudo chmod 777 /data
@@ -138,7 +138,7 @@ jobs:
           export OPENCODE_DISABLE_AUTOUPDATE=1
           export OPENCODE_CONFIG_CONTENT='{"$schema":"https://opencode.ai/config.json","model":"local/mock","providers":{"local":{"name":"Mock local","package":"@opencode/ai/providers/openai-compatible","settings":{"baseURL":"http://127.0.0.1:4599/v1","apiKey":"mock"},"models":{"mock":{"name":"Mock","modelID":"mock-model","capabilities":{"tools":false,"input":["text"],"output":["text"]},"limit":{"context":4096,"output":256}}}}}}'
           set +e
-          timeout 120 ./opencode-embedded run --model local/mock "Responde exactamente OPENCODE_MOCK_OK" > run-functional.log 2>&1
+          timeout 120 qemu-aarch64-static -L / ./opencode-embedded run --model local/mock "Responde exactamente OPENCODE_MOCK_OK" > run-functional.log 2>&1
           RUN_RC=$?
           set -e
           echo "run_rc=$RUN_RC"
@@ -151,7 +151,7 @@ jobs:
           set -euo pipefail
           cd work
           set +e
-          timeout 55 script -q -e -c "./opencode-embedded" /dev/null > tui.log 2>&1
+          timeout 55 script -q -e -c "qemu-aarch64-static -L / ./opencode-embedded" /dev/null > tui.log 2>&1
           echo "tui_exit=$?"
           set -e
           wc -c tui.log
@@ -178,7 +178,7 @@ jobs:
         run: |
           set -euo pipefail
           cd work
-          ./opencode-embedded serve --hostname 127.0.0.1 --port 4517 > serve.log 2>&1 &
+          qemu-aarch64-static -L / ./opencode-embedded serve --hostname 127.0.0.1 --port 4517 > serve.log 2>&1 &
           SRV=$!
           ok=0
           for i in $(seq 1 60); do
@@ -192,7 +192,7 @@ jobs:
           if [ "$ok" != "1" ]; then echo "SERVE_FAIL"; kill $SRV 2>/dev/null || true; exit 1; fi
           export OPENCODE_PASSWORD="$PW" OPENCODE_SERVER_PASSWORD="$PW"
           set +e
-          timeout 40 script -q -e -c "./opencode-embedded --server http://127.0.0.1:4517" /dev/null > tui_srv.log 2>&1
+          timeout 40 script -q -e -c "qemu-aarch64-static -L / ./opencode-embedded --server http://127.0.0.1:4517" /dev/null > tui_srv.log 2>&1
           echo "tui_srv_exit=$?"
           set -e
           kill $SRV 2>/dev/null || true
