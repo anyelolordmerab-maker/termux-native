@@ -131,7 +131,7 @@ def patch_build(s):
         s = s.replace(ep_old, ep_new, 1)
     elif "./src/iroh-worker.ts" not in s:
         die("entrypoints anchor")
-    worker = os.path.normpath(os.path.join(os.path.dirname(p), "..", "src", "iroh-worker.ts"))
+    worker = os.path.normpath(os.path.join(os.path.dirname(bt), "..", "src", "iroh-worker.ts"))
     write(worker, 'import { Iroh } from "@opencode/core/machine/iroh"\nexport default Iroh\n')
     return s
 
