@@ -94,6 +94,7 @@ mkdir -p "$(dirname "$LIBC_FILE")"
     printf 'msvc_lib_dir=\n'
     printf 'kernel32_lib_dir=\n'
     printf 'gcc_dir=\n'
+    printf 'darwin_sdk_dir=\n'
 } > "$LIBC_FILE"
 log "libc.txt: $LIBC_FILE"
 
