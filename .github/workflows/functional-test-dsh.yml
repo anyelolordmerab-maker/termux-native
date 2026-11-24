@@ -100,9 +100,15 @@ jobs:
           printf '#!/bin/sh\nexit 1\n' | sudo tee "$PREFIX/bin/rg" >/dev/null
           sudo chmod 755 "$PREFIX/bin/rg"
           NODE="$PREFIX/bin/node"
-          test -x "$NODE"
+          echo "--- node prefix ---"
+          ls -la "$PREFIX/bin" 2>&1 | head -20 || true
+          find "$PREFIX" -maxdepth 3 \( -name 'node*' -o -name 'libnode*' \) 2>/dev/null | head -20 || true
+          if [ ! -x "$NODE" ]; then
+            echo "NODE_MISSING: $NODE"
+            exit 1
+          fi
           export LD_LIBRARY_PATH="$PREFIX/lib"
-          qemu-aarch64-static -L / "$NODE" --version
+          qemu-aarch64-static -L / "$NODE" --version || { echo NODE_RUN_FAIL; exit 1; }
 
       - name: Native bundle checks
         run: |
