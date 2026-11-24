@@ -58,32 +58,38 @@ jobs:
           set -euo pipefail
           R="$GITHUB_WORKSPACE"
           mkdir -p "$R/out" "$R/work"
+
+          # --- preflight: fallar en segundos, no tras 10 minutos de compilacion
+          bash -n "$R/build/opentui-recipe/build-opentui-android.sh"
+          bash -n "$R/build/opentui-recipe/verify-libopentui.sh"
+          python3 -m py_compile "$R/build/opentui-recipe/patch-094-v2.py"
+          test -r "$R/build/opentui-recipe/bionic-compat.c"
+          test -r "$R/build/opentui-recipe/required-symbols-094.txt"
+          test "$(grep -vc '^#' "$R/build/opentui-recipe/required-symbols-094.txt")" = 292
+          mkdir -p "$TMPDIR" "$R/work/tmp"
+          CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          "$CC" -c "$R/build/opentui-recipe/bionic-compat.c" -o /tmp/bionic-compat.o
+          nm /tmp/bionic-compat.o | grep -q ' T __errno_location$'
+          nm /tmp/bionic-compat.o | grep -q ' T pthread_tryjoin_np$'
+          echo "preflight: scripts + 292 simbolos + bionic-compat.c OK"
+
           ZV=0.17.1
-          curl -fsSL -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZV}/zig-x86_64-linux-${ZV}.tar.xz"
+          URL="https://ziglang.org/download/${ZV}/zig-x86_64-linux-${ZV}.tar.xz"
+          curl -fsSI -o /dev/null "$URL"
+          curl -fsSL -o /tmp/zig.tar.xz "$URL"
           tar -xf /tmp/zig.tar.xz -C /tmp
           export ZIG_BIN="/tmp/zig-x86_64-linux-${ZV}/zig"
+          test -x "$ZIG_BIN"
           "$ZIG_BIN" version
+
           OPENTUI_REF=v0.9.4 \
             WORK_DIR="$R/work" \
             OUT_LIB="$R/out/libopentui.android-arm64.so" \
             bash "$R/build/opentui-recipe/build-opentui-android.sh"
+
           file "$R/out/libopentui.android-arm64.so"
           readelf -h "$R/out/libopentui.android-arm64.so" | grep -E 'Class|Machine'
           readelf -d "$R/out/libopentui.android-arm64.so" | grep NEEDED
-          echo "--- symbols FFI check ---"
-          python3 - <<'PYCHK'
-          import re,glob,subprocess,sys
-          src="/data/data/com.termux/files/usr/tmp/oc-latest"
-          js=''.join(open(f).read() for f in glob.glob('chunk-bun-*.js'))
-          req=set(re.findall(r'(ot_[A-Za-z0-9_]+)\s*[:=]\s*\{[^}]{0,400}?\bargs\s*:',js,re.M))
-          lib="$R/out/libopentui.android-arm64.so"
-          out=subprocess.run(['nm','-D','--defined-only',lib],capture_output=True,text=True).stdout
-          have=set(re.findall(r' (ot_[A-Za-z0-9_]+)$',out,re.M))
-          miss=sorted(req-have)
-          print('FFI funcs required',len(req),'present',len(req)-len(miss),'missing',len(miss))
-          if miss: print('MISSING',miss); sys.exit(1)
-          print('SO_FFI_OK')
-          PYCHK
       - uses: actions/upload-artifact@v4
         with:
           name: opentui-so-094
@@ -424,7 +430,7 @@ jobs:
           ck('needed_subset_of_phone_libs', needed<=allowed, str(sorted(needed)))
           ck('not_glibc_ld_linux', 'ld-linux' not in blob and 'ld-musl' not in blob)
           ck('android_api_compat', dev['api']>=28, str(dev['api']))
-          for lib in (b'libopentui',b'libfff_c',b'watcher.node',b'librust_pty',b'opencode-pty'):
+          for lib in (b'libopentui',b'libfff_c',b'watcher.node',b'librust_pty',b'opencode-pty',b'iroh.android-arm64.node'):
               ck('embedded_'+lib.decode(), lib in elf)
           ck('elf_count_9', elf.count(b'\x7fELF')>=9, str(elf.count(b'\x7fELF')))
           bad=[n for n,ok in checks if not ok]
@@ -448,6 +454,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if ! gh release view opencode-v2.4.1 >/dev/null 2>&1; then
+            gh release create opencode-v2.4.1 \
+              --title "opencode 2.4.1 (Termux native aarch64)" \
+              --notes "Binario nativo para Termux/Android aarch64 (bionic). Solo se publican el .tar.zst y su .sha256."
+          fi
+          for a in $(gh release view opencode-v2.4.1 --json assets -q '.assets[].name'); do
+            case "$a" in
+              opencode-embedded-2.4.1.tar.zst|opencode-embedded-2.4.1.tar.zst.sha256) ;;
+              *) gh release delete-asset opencode-v2.4.1 "$a" -y ;;
+            esac
+          done
           gh release upload opencode-v2.4.1 \
             work/opencode-embedded-2.4.1.tar.zst \
             work/opencode-embedded-2.4.1.tar.zst.sha256 \

@@ -110,7 +110,7 @@ grep -vxF -f "$TMPDIR_SELF/exported.txt" "$TMPDIR_SELF/required.txt" > "$TMPDIR_
 MISSING_COUNT="$(grep -c . "$TMPDIR_SELF/missing.txt" || true)"
 
 if [ "$MISSING_COUNT" != "0" ]; then
-    echo "error: a '$LIB' le faltan $MISSING_COUNT símbolos FFI que exige @opentui/core 0.5.9:" >&2
+    echo "error: a '$LIB' le faltan $MISSING_COUNT símbolos FFI que exige @opentui/core 0.9.4:" >&2
     sed 's/^/  - /' "$TMPDIR_SELF/missing.txt" >&2
     exit 5
 fi

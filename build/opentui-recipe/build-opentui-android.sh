@@ -35,6 +35,10 @@ OUT_LIB="${OUT_LIB:-$REPO_ROOT/native/libopentui.android-arm64.so}"
 SRC_DIR="$WORK_DIR/opentui-src"
 LIBC_FILE="$WORK_DIR/android-libc.txt"
 
+# TMPDIR propio y existente: evita mktemp fallando en runners con TMPDIR fijado.
+mkdir -p "$WORK_DIR/tmp"
+export TMPDIR="$WORK_DIR/tmp"
+
 log() { printf '>>> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
@@ -118,16 +122,16 @@ NATIVE_DIR="$SRC_DIR/packages/native"
 log "commit: $(git -C "$SRC_DIR" rev-parse HEAD)"
 
 # --- 3. dependencias Zig (uucode/yoga/ghostty) desde el vendor del repo
+[ -f "$NATIVE_DIR/src/vendor/zig-deps.tar.gz" ] || die "falta $NATIVE_DIR/src/vendor/zig-deps.tar.gz"
 if [ ! -f "$NATIVE_DIR/zig-deps/.ready" ]; then
-    log "preparando dependencias Zig (descarga de uucode/yoga/ghostty)"
-    mkdir -p "$WORK_DIR/tmp"
-    export TMPDIR="$WORK_DIR/tmp"
-    ( cd "$NATIVE_DIR" && sh src/vendor/update-zig-deps.sh && sh scripts/prepare-zig-deps.sh )
+    log "preparando dependencias Zig desde el vendor (sin red)"
+    ( cd "$NATIVE_DIR" && sh scripts/prepare-zig-deps.sh )
 fi
 
 # --- 3.5 parche del build.zig: los translate-c necesitan los headers del NDK
 # (si no, 'pthread.h'/'math.h' not found; ver ci/patch-opentui-android-translate-c.py)
 python3 "$REPO_ROOT/patch-094-v2.py" "$NATIVE_DIR/build.zig"
+"$ZIG_BIN" ast-check "$NATIVE_DIR/build.zig"
 NDK_INCLUDE="$SYSROOT/usr/include"
 NDK_ARCH_INCLUDE="$SYSROOT/usr/include/$ANDROID_TRIPLE"
 NDK_LIB="$SYSROOT/usr/lib/$ANDROID_TRIPLE/$ANDROID_API"
@@ -142,7 +146,7 @@ export ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$WORK_DIR/cache/zig}"
 export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$WORK_DIR/cache/zig-global}"
 mkdir -p "$ZIG_LOCAL_CACHE_DIR" "$ZIG_GLOBAL_CACHE_DIR"
 PREFIX="$WORK_DIR/zig-out"
-rm -rf "$PREFIX"
+rm -rf "$PREFIX" "$WORK_DIR/lib"
 log "zig build (release, target $OPENTUI_TARGET)"
 ( cd "$NATIVE_DIR" && "$ZIG_BIN" build \
     -Dlibrary-target="$OPENTUI_TARGET" \
@@ -153,8 +157,7 @@ log "zig build (release, target $OPENTUI_TARGET)"
     -Dbionic-compat-c="$REPO_ROOT/bionic-compat.c" \
     --libc "$LIBC_FILE" \
     --prefix "$PREFIX" \
-    --cache-dir "$ZIG_LOCAL_CACHE_DIR" \
-    --global-cache-dir "$ZIG_GLOBAL_CACHE_DIR" )
+    --cache-dir "$ZIG_LOCAL_CACHE_DIR" )
 
 BUILT="$(find "$WORK_DIR/lib" "$PREFIX" -name libopentui.so -type f 2>/dev/null | head -n1 || true)"
 if [ -z "$BUILT" ]; then
@@ -166,6 +169,6 @@ mkdir -p "$(dirname "$OUT_LIB")"
 cp -f "$BUILT" "$OUT_LIB"
 log "artefacto: $OUT_LIB ($(du -h "$OUT_LIB" | cut -f1))"
 
-# --- 5. verificación de contrato (AArch64 DYN + NEEDED libc.so + 397 símbolos FFI)
-bash "$REPO_ROOT/verify-libopentui.sh" "$OUT_LIB" --ndk-lib "$NDK_LIB"
+# --- 5. verificación de contrato (AArch64 DYN + NEEDED libc.so + 292 símbolos FFI de 0.9.4)
+bash "$REPO_ROOT/verify-libopentui.sh" "$OUT_LIB" "$REPO_ROOT/required-symbols-094.txt" --ndk-lib "$NDK_LIB"
 readelf -h "$OUT_LIB" | grep -E 'Class|Machine|Type' | sed 's/^/  /'
