@@ -63,30 +63,33 @@ sub('''        .linux => {
             module.linkSystemLibrary("m", .{});
         },''',
     '''        .linux => {
-            module.linkSystemLibrary("dl", .{});
-            module.linkSystemLibrary("pthread", .{});
-            module.linkSystemLibrary("m", .{});
-        },
-        .android => {
-            if (android_ndk_lib) |lib| module.addLibraryPath(.{ .cwd_relative = lib });
-            // bionic: pthread/dl viven en libc; solo libm es una .so aparte.
-            module.linkSystemLibrary("m", .{});
+            if (android_ndk_lib) |dir| {
+                module.addLibraryPath(.{ .cwd_relative = dir });
+                // bionic: pthread/dl viven en libc; solo libm es una .so aparte.
+                module.linkSystemLibrary("m", .{});
+                if (android_bionic_compat) |compat| {
+                    module.addCSourceFile(.{
+                        .file = .{ .cwd_relative = compat },
+                        .flags = &.{ "-std=c99", "-D_GNU_SOURCE" },
+                    });
+                }
+            } else {
+                module.linkSystemLibrary("dl", .{});
+                module.linkSystemLibrary("pthread", .{});
+                module.linkSystemLibrary("m", .{});
+            }
         },''',
     'android link branch')
 
-sub('''    addNativeAudioDependencies(b, module, target, macos_sdk_path);
-    addYogaDependencies(b, module, false);
-''',
-    '''    addNativeAudioDependencies(b, module, target, macos_sdk_path);
-    addYogaDependencies(b, module, false);
-    if (android_bionic_compat) |compat| {
-        module.addCSourceFile(.{
-            .file = .{ .cwd_relative = compat },
-            .flags = &.{ "-std=c99", "-D_GNU_SOURCE" },
-        });
-    }
-''',
-    'bionic-compat C source')
+sub('    for (createLibraries(b, target, optimize, build_options, macos_sdk_path)) |lib| {\n',
+    '    for (createLibraries(b, target, optimize, build_options, macos_sdk_path)) |lib| {\n        if (lib.isStaticLibrary() and target.result.abi == .android) continue;\n',
+    'skip android static library')
+
+sub('if (lib.isStaticLibrary() and (windows or target.result.os.tag == .linux)) {',
+    'if (lib.isStaticLibrary() and (windows or (target.result.os.tag == .linux and target.result.abi != .android))) {',
+    'static bundle android')
+
+
 
 if s == orig:
     sys.exit("nothing changed")
