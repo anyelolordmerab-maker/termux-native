@@ -1,0 +1,262 @@
+name: opentui-android-so
+
+# Receta REUTILIZABLE: compila libopentui.so para Android aarch64-bionic desde
+# la fuente de OpenTUI, con Zig + NDK, y publica el artefacto.
+#
+# Uso desde otro workflow:
+#   jobs:
+#     opentui-so:
+#       uses: ./.github/workflows/opentui-android-so.yml
+#       with:
+#         opentui_version: "0.9.4"
+#         zig_version: "0.17.1"
+#         android_api: "24"
+#         patch_script: "build/opentui-recipe/patch-094-v2.py"
+#         required_symbols: "build/opentui-recipe/required-symbols-094.txt"
+#         expected_symbols: "292"
+#         artifact_name: "opentui-so-094"
+#
+# Para una versión nueva de OpenTUI: añade su patch y su lista de símbolos al
+# repo, y cambia los inputs. No se toca el resto del pipeline.
+#
+# Secretos: ninguno. Solo lee el repo y sube un artifact.
+
+on:
+  workflow_call:
+    inputs:
+      opentui_version:
+        description: "Versión de OpenTUI (tag vX.Y.Z)"
+        type: string
+        required: true
+      zig_version:
+        description: "Versión de Zig (debe cumplir minimum_zig_version de OpenTUI)"
+        type: string
+        default: "0.17.1"
+      android_api:
+        description: "minSdk / API del NDK"
+        type: string
+        default: "24"
+      opentui_ref:
+        description: "Tag/ref exacto (si vacío: v<opentui_version>)"
+        type: string
+        default: ""
+      patch_script:
+        description: "Parche de build.zig para esta versión"
+        type: string
+        default: "build/opentui-recipe/patch-094-v2.py"
+      required_symbols:
+        description: "Lista de símbolos FFI esperados"
+        type: string
+        default: "build/opentui-recipe/required-symbols-094.txt"
+      verify_script:
+        description: "Verificador ELF/símbolos"
+        type: string
+        default: "build/opentui-recipe/verify-libopentui.sh"
+      expected_symbols:
+        description: "Nº exacto de símbolos (0 = no comprobar)"
+        type: string
+        default: "292"
+      artifact_name:
+        description: "Nombre del artifact (si vacío: opentui-so-<version>)"
+        type: string
+        default: ""
+    outputs:
+      artifact_name:
+        description: "Nombre del artifact subido"
+        value: ${{ jobs.opentui.outputs.artifact_name }}
+      so_sha256:
+        description: "SHA-256 del .so"
+        value: ${{ jobs.opentui.outputs.so_sha256 }}
+  workflow_dispatch:
+    inputs:
+      opentui_version:
+        description: "Versión de OpenTUI (tag vX.Y.Z)"
+        type: string
+        default: "0.9.4"
+        required: true
+      zig_version:
+        description: "Versión de Zig"
+        type: string
+        default: "0.17.1"
+      android_api:
+        description: "minSdk / API del NDK"
+        type: string
+        default: "24"
+      opentui_ref:
+        description: "Tag/ref exacto (si vacío: v<opentui_version>)"
+        type: string
+        default: ""
+      patch_script:
+        description: "Parche de build.zig"
+        type: string
+        default: "build/opentui-recipe/patch-094-v2.py"
+      required_symbols:
+        description: "Lista de símbolos FFI"
+        type: string
+        default: "build/opentui-recipe/required-symbols-094.txt"
+      verify_script:
+        description: "Verificador ELF/símbolos"
+        type: string
+        default: "build/opentui-recipe/verify-libopentui.sh"
+      expected_symbols:
+        description: "Nº exacto de símbolos (0 = no comprobar)"
+        type: string
+        default: "292"
+      artifact_name:
+        description: "Nombre del artifact"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opentui-android-so-${{ inputs.opentui_version }}-${{ inputs.zig_version }}
+  cancel-in-progress: true
+
+jobs:
+  opentui:
+    name: OpenTUI ${{ inputs.opentui_version }} / Zig ${{ inputs.zig_version }} / API ${{ inputs.android_api }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      artifact_name: ${{ steps.meta.outputs.artifact_name }}
+      so_sha256: ${{ steps.meta.outputs.so_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools + NDK
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq curl xz-utils file binutils python3 git cmake perl make
+          if [ -z "${ANDROID_NDK_HOME:-}" ]; then
+            ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-}"
+          fi
+          test -n "$ANDROID_NDK_HOME"
+          test -d "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
+          echo "NDK=$ANDROID_NDK_HOME"
+
+      - name: Cache Zig toolchain
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/zig-x86_64-linux-${{ inputs.zig_version }}
+          key: zig-${{ inputs.zig_version }}-linux-x86_64-v1
+
+      - name: Cache Zig build
+        uses: actions/cache@v4
+        with:
+          path: work/cache
+          key: opentui-${{ inputs.opentui_version }}-zig-${{ inputs.zig_version }}-${{ hashFiles('build/opentui-recipe/**') }}-v1
+          restore-keys: |
+            opentui-${{ inputs.opentui_version }}-zig-${{ inputs.zig_version }}-
+
+      - name: Preflight (falla en segundos, no tras 10 min)
+        run: |
+          set -euo pipefail
+          API="${{ inputs.android_api }}"
+          NDK="$ANDROID_NDK_HOME"
+          SYSROOT="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          CRT="$SYSROOT/usr/lib/aarch64-linux-android/$API"
+          CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API}-clang"
+
+          bash -n build/opentui-recipe/build-opentui-android.sh
+          bash -n "${{ inputs.verify_script }}"
+          python3 -m py_compile "${{ inputs.patch_script }}"
+          test -r build/opentui-recipe/bionic-compat.c
+          test -r "${{ inputs.required_symbols }}"
+          if [ "${{ inputs.expected_symbols }}" != "0" ]; then
+            test "$(grep -vc '^#' "${{ inputs.required_symbols }}")" = "${{ inputs.expected_symbols }}"
+          fi
+
+          # El fallo real de Zig 0.17.1: cc_dir debe tener crtbegin_so.o/crtend_so.o.
+          test -f "$CRT/crtbegin_so.o" || { echo "NDK sin crtbegin_so.o en $CRT"; exit 1; }
+          test -f "$CRT/crtend_so.o"   || { echo "NDK sin crtend_so.o en $CRT"; exit 1; }
+
+          "$CC" -std=c99 -D_GNU_SOURCE -fPIC -c build/opentui-recipe/bionic-compat.c -o /tmp/bionic-compat.o
+          nm /tmp/bionic-compat.o | grep -q ' T __errno_location$'
+          nm /tmp/bionic-compat.o | grep -q ' T pthread_tryjoin_np$'
+          if nm -u /tmp/bionic-compat.o | grep -q 'pthread_timedjoin_np'; then
+            echo "bionic-compat.c depende de pthread_timedjoin_np (no existe en Bionic API $API)"
+            exit 1
+          fi
+          echo "preflight OK: scripts, ${{ inputs.expected_symbols }} símbolos, CRT shared y shims Bionic"
+
+      - name: Download Zig (cacheado)
+        run: |
+          set -euo pipefail
+          ZV="${{ inputs.zig_version }}"
+          ZDIR="$RUNNER_TEMP/zig-x86_64-linux-$ZV"
+          if [ ! -x "$ZDIR/zig" ]; then
+            URL="https://ziglang.org/download/${ZV}/zig-x86_64-linux-${ZV}.tar.xz"
+            curl -fsSL -o /tmp/zig.tar.xz "$URL"
+            tar -xf /tmp/zig.tar.xz -C "$RUNNER_TEMP"
+          fi
+          test -x "$ZDIR/zig"
+          "$ZDIR/zig" version | grep -qx "$ZV"
+
+      - name: Build libopentui.so
+        run: |
+          set -euo pipefail
+          API="${{ inputs.android_api }}"
+          ZV="${{ inputs.zig_version }}"
+          ZIG_BIN="$RUNNER_TEMP/zig-x86_64-linux-${ZV}/zig"
+          REF="${{ inputs.opentui_ref }}"
+          [ -n "$REF" ] || REF="v${{ inputs.opentui_version }}"
+          ARTIFACT="${{ inputs.artifact_name }}"
+          [ -n "$ARTIFACT" ] || ARTIFACT="opentui-so-${{ inputs.opentui_version }}"
+
+          PATCH="${{ inputs.patch_script }}"
+          REQUIRED="${{ inputs.required_symbols }}"
+          VERIFY="${{ inputs.verify_script }}"
+          case "$PATCH"    in /*) ;; *) PATCH="$GITHUB_WORKSPACE/$PATCH";; esac
+          case "$REQUIRED" in /*) ;; *) REQUIRED="$GITHUB_WORKSPACE/$REQUIRED";; esac
+          case "$VERIFY"   in /*) ;; *) VERIFY="$GITHUB_WORKSPACE/$VERIFY";; esac
+          # build-opentui-android.sh usa REPO_ROOT/verify-libopentui.sh; el verificador
+          # reutilizable se copia al lugar esperado si se llama con otro nombre/ruta.
+          if [ "$(readlink -f "$VERIFY")" != "$(readlink -f build/opentui-recipe/verify-libopentui.sh)" ]; then
+            cp -f "$VERIFY" build/opentui-recipe/verify-libopentui.sh
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/out" "$GITHUB_WORKSPACE/work/tmp"
+          OPENTUI_REF="$REF" \
+          ANDROID_API="$API" \
+          ZIG_BIN="$ZIG_BIN" \
+          WORK_DIR="$GITHUB_WORKSPACE/work" \
+          OUT_LIB="$GITHUB_WORKSPACE/out/libopentui.android-arm64.so" \
+          PATCH_SCRIPT="$PATCH" \
+          REQUIRED_SYMBOLS="$REQUIRED" \
+            bash build/opentui-recipe/build-opentui-android.sh
+
+          SO="$GITHUB_WORKSPACE/out/libopentui.android-arm64.so"
+          test -s "$SO"
+          file "$SO"
+          readelf -h "$SO" | grep -E 'Class|Machine|Type'
+          readelf -d "$SO" | grep NEEDED
+          ( cd "$GITHUB_WORKSPACE/out" && sha256sum libopentui.android-arm64.so > libopentui.android-arm64.so.sha256 )
+          cat "$GITHUB_WORKSPACE/out/libopentui.android-arm64.so.sha256"
+
+          echo "artifact_name=$ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "so_sha256=$(sha256sum "$SO" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+        id: build
+
+      - name: Set artifact metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          ARTIFACT="${{ inputs.artifact_name }}"
+          [ -n "$ARTIFACT" ] || ARTIFACT="opentui-so-${{ inputs.opentui_version }}"
+          SO="$GITHUB_WORKSPACE/out/libopentui.android-arm64.so"
+          echo "artifact_name=$ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "so_sha256=$(sha256sum "$SO" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload .so
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact_name }}
+          path: |
+            out/libopentui.android-arm64.so
+            out/libopentui.android-arm64.so.sha256
+          if-no-files-found: error
+          retention-days: 7

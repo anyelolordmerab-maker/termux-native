@@ -12,18 +12,20 @@
 #   ci/build-opentui-android.sh
 #
 # Variables:
-#   OPENTUI_REF        ref/tag a compilar            (v0.5.9)
+#   OPENTUI_REF        ref/tag a compilar            (v0.9.4)
 #   OPENTUI_TARGET     triple+API de Zig             (aarch64-linux-android.24)
 #   OPENTUI_OPTIMIZE   modo de optimización de Zig   (ReleaseSafe)
 #   ANDROID_API        minSdk / dir de CRT del NDK   (24)
-#   ZIG_BIN            binario de Zig 0.16.x         (zig del PATH)
+#   ZIG_BIN            binario de Zig 0.17.1        (zig del PATH)
 #   ANDROID_NDK_HOME   NDK raíz con toolchains/llvm  (autodetectado)
 #   WORK_DIR           árbol de build                (<repo>/build)
 #   OUT_LIB            destino de la .so             (<repo>/native/libopentui.android-arm64.so)
+#   PATCH_SCRIPT       parche de build.zig             (<repo>/patch-094-v2.py)
+#   REQUIRED_SYMBOLS   lista FFI esperada               (<repo>/required-symbols-094.txt)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OPENTUI_REF="${OPENTUI_REF:-v0.5.9}"
+OPENTUI_REF="${OPENTUI_REF:-v0.9.4}"
 OPENTUI_REPO="${OPENTUI_REPO:-https://github.com/anomalyco/opentui.git}"
 OPENTUI_TARGET="${OPENTUI_TARGET:-aarch64-linux-android.24}"
 OPENTUI_OPTIMIZE="${OPENTUI_OPTIMIZE:-ReleaseSafe}"
@@ -32,6 +34,8 @@ ANDROID_TRIPLE="${ANDROID_TRIPLE:-aarch64-linux-android}"
 ZIG_BIN="${ZIG_BIN:-zig}"
 WORK_DIR="${WORK_DIR:-$REPO_ROOT/build}"
 OUT_LIB="${OUT_LIB:-$REPO_ROOT/native/libopentui.android-arm64.so}"
+PATCH_SCRIPT="${PATCH_SCRIPT:-$REPO_ROOT/patch-094-v2.py}"
+REQUIRED_SYMBOLS="${REQUIRED_SYMBOLS:-$REPO_ROOT/required-symbols-094.txt}"
 SRC_DIR="$WORK_DIR/opentui-src"
 LIBC_FILE="$WORK_DIR/android-libc.txt"
 
@@ -136,7 +140,7 @@ fi
 
 # --- 3.5 parche del build.zig: los translate-c necesitan los headers del NDK
 # (si no, 'pthread.h'/'math.h' not found; ver ci/patch-opentui-android-translate-c.py)
-python3 "$REPO_ROOT/patch-094-v2.py" "$NATIVE_DIR/build.zig"
+python3 "$PATCH_SCRIPT" "$NATIVE_DIR/build.zig"
 "$ZIG_BIN" ast-check "$NATIVE_DIR/build.zig"
 NDK_INCLUDE="$SYSROOT/usr/include"
 NDK_ARCH_INCLUDE="$SYSROOT/usr/include/$ANDROID_TRIPLE"
@@ -176,5 +180,5 @@ cp -f "$BUILT" "$OUT_LIB"
 log "artefacto: $OUT_LIB ($(du -h "$OUT_LIB" | cut -f1))"
 
 # --- 5. verificación de contrato (AArch64 DYN + NEEDED libc.so + 292 símbolos FFI de 0.9.4)
-bash "$REPO_ROOT/verify-libopentui.sh" "$OUT_LIB" "$REPO_ROOT/required-symbols-094.txt" --ndk-lib "$NDK_LIB"
+bash "$REPO_ROOT/verify-libopentui.sh" "$OUT_LIB" "$REQUIRED_SYMBOLS" --ndk-lib "$NDK_LIB"
 readelf -h "$OUT_LIB" | grep -E 'Class|Machine|Type' | sed 's/^/  /'

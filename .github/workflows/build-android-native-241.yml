@@ -36,64 +36,17 @@ env:
 
 jobs:
   opentui-so:
-    name: Build bionic libopentui.so 0.9.4 (NDK)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - name: Tools
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq curl xz-utils file binutils python3 git cmake perl make
-          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}" >> "$GITHUB_ENV"
-          echo "--- preflight URLs ---"
-          for u in \
-            "https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz" \
-            "https://github.com/anomalyco/opentui.git" \
-            "https://registry.npmjs.org/@opentui/core-linux-arm64-musl/-/core-linux-arm64-musl-0.9.4.tgz"; do
-            curl -fsSI -o /dev/null "$u" || { echo "URL DOWN: $u"; exit 1; }
-          done
-      - name: Build .so
-        run: |
-          set -euo pipefail
-          R="$GITHUB_WORKSPACE"
-          mkdir -p "$R/out" "$R/work"
-
-          # --- preflight: fallar en segundos, no tras 10 minutos de compilacion
-          bash -n "$R/build/opentui-recipe/build-opentui-android.sh"
-          bash -n "$R/build/opentui-recipe/verify-libopentui.sh"
-          python3 -m py_compile "$R/build/opentui-recipe/patch-094-v2.py"
-          test -r "$R/build/opentui-recipe/bionic-compat.c"
-          test -r "$R/build/opentui-recipe/required-symbols-094.txt"
-          test "$(grep -vc '^#' "$R/build/opentui-recipe/required-symbols-094.txt")" = 292
-          mkdir -p "$TMPDIR" "$R/work/tmp"
-          CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
-          "$CC" -c "$R/build/opentui-recipe/bionic-compat.c" -o /tmp/bionic-compat.o
-          nm /tmp/bionic-compat.o | grep -q ' T __errno_location$'
-          nm /tmp/bionic-compat.o | grep -q ' T pthread_tryjoin_np$'
-          echo "preflight: scripts + 292 simbolos + bionic-compat.c OK"
-
-          ZV=0.17.1
-          URL="https://ziglang.org/download/${ZV}/zig-x86_64-linux-${ZV}.tar.xz"
-          curl -fsSI -o /dev/null "$URL"
-          curl -fsSL -o /tmp/zig.tar.xz "$URL"
-          tar -xf /tmp/zig.tar.xz -C /tmp
-          export ZIG_BIN="/tmp/zig-x86_64-linux-${ZV}/zig"
-          test -x "$ZIG_BIN"
-          "$ZIG_BIN" version
-
-          OPENTUI_REF=v0.9.4 \
-            WORK_DIR="$R/work" \
-            OUT_LIB="$R/out/libopentui.android-arm64.so" \
-            bash "$R/build/opentui-recipe/build-opentui-android.sh"
-
-          file "$R/out/libopentui.android-arm64.so"
-          readelf -h "$R/out/libopentui.android-arm64.so" | grep -E 'Class|Machine'
-          readelf -d "$R/out/libopentui.android-arm64.so" | grep NEEDED
-      - uses: actions/upload-artifact@v4
-        with:
-          name: opentui-so-094
-          path: out/libopentui.android-arm64.so
+    name: OpenTUI 0.9.4 bionic .so
+    uses: ./.github/workflows/opentui-android-so.yml
+    with:
+      opentui_version: "0.9.4"
+      zig_version: "0.17.1"
+      android_api: "24"
+      opentui_ref: "v0.9.4"
+      patch_script: "build/opentui-recipe/patch-094-v2.py"
+      required_symbols: "build/opentui-recipe/required-symbols-094.txt"
+      expected_symbols: "292"
+      artifact_name: "opentui-so-094"
 
   native-modules:
     name: NDK native modules (bun-pty)
@@ -181,7 +134,7 @@ jobs:
           path: work/native
       - uses: actions/download-artifact@v4
         with:
-          name: opentui-so-094
+          name: ${{ needs.opentui-so.outputs.artifact_name }}
           path: work/so
       - name: Use bionic-built opentui .so
         run: cp work/so/libopentui.android-arm64.so /content/libopentui.bionic.so
