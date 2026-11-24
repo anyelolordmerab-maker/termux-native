@@ -2,14 +2,16 @@
 # Instalador de opencode 2.4.1 (binario único bionic/aarch64) para Termux.
 #
 # Modos:
-#   --isolated  (por defecto) instala en $HOME/.local/opencode-241 y crea el
+#   (sin opción) pregunta: si ya hay opencode, elige AISLADO por defecto.
+#   --isolated  instala en $HOME/.local/opencode-241 y crea el
 #               comando `opencode241` con HOME/XDG/TMPDIR propios. NO toca el
 #               opencode que ya funciona ni su configuración.
 #   --live      reemplaza $PREFIX/bin/opencode (con backup) para quien quiera
 #               usar 2.4.1 como opencode principal.
 #
 # Uso:
-#   bash install-opencode-241.sh --isolated
+#   bash install-opencode-241.sh            # interactivo
+#   bash install-opencode-241.sh --isolated  # sin preguntar
 #   bash install-opencode-241.sh --live
 #
 # No usa pkill ni patrones: si hay que detener instancias, se hace por PID.
