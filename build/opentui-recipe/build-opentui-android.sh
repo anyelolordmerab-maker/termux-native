@@ -86,12 +86,10 @@ for f in \
     "$CRT_DIR/libc.so"; do
     [ -r "$f" ] || die "el NDK no aporta '$f' (¿API/arquitectura equivocadas?)"
 done
-# Zig 0.17.1 exige cc_dir no vacio incluso para Android. Apuntamos a un
-# directorio con los CRT de Android con los nombres genericos que espera Zig.
-CC_DIR="$WORK_DIR/cc"
-mkdir -p "$CC_DIR"
-ln -sf "$CRT_DIR/crtbegin_dynamic.o" "$CC_DIR/crtbegin.o"
-ln -sf "$CRT_DIR/crtend_android.o" "$CC_DIR/crtend.o"
+# Zig 0.17.1 exige cc_dir no vacio incluso para Android. El propio directorio
+# de la API ya trae crtbegin_so.o/crtend_so.o (los que usa una .so), asi que no
+# hay que inventar symlinks con nombres de ejecutable.
+CC_DIR="$CRT_DIR"
 
 mkdir -p "$(dirname "$LIBC_FILE")"
 {
