@@ -23,6 +23,8 @@ OPENTUI_SO = os.environ["OPENTUI_SO"]
 BUNPTY_SO = os.environ["BUNPTY_SO"]
 WATCHER_DIR = os.environ["WATCHER_DIR"]
 FFF_DIR = os.environ["FFF_DIR"]
+IROH_DIR = os.environ.get("IROH_DIR", "")
+OPENTUI_VERSION = os.environ.get("OPENTUI_VERSION", "0.8.4")
 PTY_BIN = os.environ["PTY_BIN"]
 
 
@@ -286,7 +288,7 @@ def plant_core():
         json.dump(
             {
                 "name": "@opentui/core-android-arm64",
-                "version": "0.8.4",
+                "version": OPENTUI_VERSION,
                 "type": "module",
                 "main": "index.js",
                 "module": "index.js",
@@ -357,6 +359,8 @@ print("PLANT core", plant_core(), flush=True)
 print("PLANT watcher", plant_dir("@parcel/watcher-android-arm64", WATCHER_DIR), flush=True)
 print("PLANT fff", plant_dir("@ff-labs/fff-bin-android-arm64", FFF_DIR), flush=True)
 print("PLANT pty", plant_pty(), flush=True)
+if IROH_DIR:
+    print("PLANT iroh", plant_dir("@number0/iroh-android-arm64", IROH_DIR), flush=True)
 print("PLANT bun-pty", plant_bunpty(), flush=True)
 
 print("PREPARE OK", flush=True)

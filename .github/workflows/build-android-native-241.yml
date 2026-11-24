@@ -1,0 +1,397 @@
+name: build-android-native-241
+
+# Build 100% nativo para Termux/Android:
+#   job native-modules (x86_64 + NDK 27): compila bun-pty (Rust) para aarch64-linux-android
+#   job build (arm64 nativo): compila opencode con target android real, planta los
+#   paquetes nativos Android (opentui/watcher/fff/pty/bun-pty) y valida en el mismo runner.
+# Sin qemu, sin Zig, sin descargar nada al telefono.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publicar en el release opencode-v2.4.1"
+        type: boolean
+        default: false
+  push:
+    paths:
+      - '.github/workflows/build-android-native.yml'
+      - 'build/android-native/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-android-native-241
+  cancel-in-progress: true
+
+env:
+  HOME: ${{ github.workspace }}/work/home
+  XDG_DATA_HOME: ${{ github.workspace }}/work/home/.local/share
+  XDG_CACHE_HOME: ${{ github.workspace }}/work/home/.cache
+  XDG_CONFIG_HOME: ${{ github.workspace }}/work/home/.config
+  XDG_STATE_HOME: ${{ github.workspace }}/work/home/.local/state
+  TMPDIR: ${{ github.workspace }}/work/tmp
+  TERM: xterm-256color
+
+jobs:
+  native-modules:
+    name: NDK native modules (bun-pty)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust + Android target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-linux-android
+          echo "NDK=$ANDROID_NDK_HOME"
+          test -n "$ANDROID_NDK_HOME"
+          ls "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" | head
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-android-bunpty-v0.4.11
+
+      - name: Build bun-pty v0.4.11 for aarch64-linux-android
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v0.4.11 https://github.com/sursatech/bun-pty.git /tmp/bun-pty
+          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+          API=24
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/bin/aarch64-linux-android${API}-clang"
+          export CC_aarch64_linux_android="$TOOLCHAIN/bin/aarch64-linux-android${API}-clang"
+          export CXX_aarch64_linux_android="$TOOLCHAIN/bin/aarch64-linux-android${API}-clang++"
+          export AR_aarch64_linux_android="$TOOLCHAIN/bin/llvm-ar"
+          export RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384"
+          cd /tmp/bun-pty/rust-pty
+          cargo fetch --target aarch64-linux-android
+          # termios 0.2.2 no soporta android; Android usa termios estilo Linux.
+          python3 - <<'PYPATCH'
+          import glob, os
+          pats = glob.glob(os.path.expanduser('~/.cargo/registry/src/*/termios-0.2.2/src/**/*.rs'), recursive=True) + \
+                 glob.glob(os.path.expanduser('~/.cargo/registry/src/*/termios-0.2.2/src/*.rs'))
+          for p in pats:
+              s=open(p).read(); o=s
+              s=s.replace('target_os = "linux"', 'any(target_os = "linux", target_os = "android")')
+              if s!=o: open(p,'w').write(s); print('patched',p)
+          PYPATCH
+          cargo build --release --target aarch64-linux-android
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp target/aarch64-linux-android/release/librust_pty.so "$GITHUB_WORKSPACE/out/"
+          file "$GITHUB_WORKSPACE/out/librust_pty.so"
+          readelf -h "$GITHUB_WORKSPACE/out/librust_pty.so" | egrep 'Class|Machine|Type' 
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-native-modules
+          path: out/librust_pty.so
+
+  build:
+    name: Build + validate (aarch64 native)
+    needs: native-modules
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host info
+        run: |
+          uname -a
+          echo "arch=$(uname -m) cores=$(nproc)"
+          free -h
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd file binutils curl unzip python3 coreutils util-linux jq
+          sudo mkdir -p /content /data
+          sudo chown -R "$USER" /content
+          sudo chmod 777 /data
+          mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$TMPDIR" work/vendor work/out
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-native-modules
+          path: work/native
+
+      - name: Cache bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-1.4.5-arm64-opencode-2.3.2-v1
+
+      - name: Fetch source, bionic .so and android npm packages
+        run: |
+          set -euo pipefail
+          VER=2.4.1
+          R=https://github.com/anyelolordmerab-maker/termux-native/releases/download
+          curl -fsSL -o /tmp/oc.tgz "https://codeload.github.com/anomalyco/opencode/tar.gz/refs/tags/v$VER"
+          mkdir -p /content/oc && tar xzf /tmp/oc.tgz -C /content/oc --strip-components=1
+          curl -fsSL -o /tmp/opentui94.tgz "https://registry.npmjs.org/@opentui/core-linux-arm64-musl/-/core-linux-arm64-musl-0.9.4.tgz"
+          mkdir -p /tmp/opentui94 && tar xzf /tmp/opentui94.tgz -C /tmp/opentui94 --strip-components=1
+          cp /tmp/opentui94/libopentui.so /content/libopentui.bionic.so
+          test -s /content/libopentui.bionic.so
+          # npm: versiones EXACTAS que usa opencode 2.4.1
+          curl -fsSL -o work/vendor/watcher.tgz "https://registry.npmjs.org/@parcel/watcher-android-arm64/-/watcher-android-arm64-2.5.1.tgz"
+          mkdir -p work/vendor/watcher && tar xzf work/vendor/watcher.tgz -C work/vendor/watcher
+          curl -fsSL -o work/vendor/fff.tgz "https://registry.npmjs.org/@ff-labs/fff-bin-android-arm64/-/fff-bin-android-arm64-0.10.5.tgz"
+          mkdir -p work/vendor/fff && tar xzf work/vendor/fff.tgz -C work/vendor/fff
+          curl -fsSL -o work/vendor/pty.tgz "https://registry.npmjs.org/@opencode/pty-linux-arm64-musl/-/pty-linux-arm64-musl-0.6.0.tgz"
+          mkdir -p work/vendor/pty && tar xzf work/vendor/pty.tgz -C work/vendor/pty
+          curl -fsSL -o work/vendor/iroh.tgz "https://registry.npmjs.org/@number0/iroh-android-arm64/-/iroh-android-arm64-1.2.0.tgz"
+          mkdir -p work/vendor/iroh && tar xzf work/vendor/iroh.tgz -C work/vendor/iroh
+          case "$(uname -m)" in aarch64|arm64) A=aarch64;; *) A=x64;; esac
+          mkdir -p /content/bin
+          curl -fsSL -o /tmp/b.zip "https://github.com/oven-sh/bun/releases/download/bun-v1.4.5/bun-linux-${A}.zip"
+          (cd /tmp && unzip -oq b.zip && cp "bun-linux-${A}/bun" /content/bin/bun && chmod +x /content/bin/bun)
+          export PATH=/content/bin:$PATH
+          bun --version
+          ls -l /content/libopentui.bionic.so work/native/librust_pty.so work/vendor/pty/package/bin/opencode-pty
+
+      - name: bun install
+        run: |
+          set -euo pipefail
+          export PATH=/content/bin:$PATH
+          cd /content/oc
+          bun install
+
+      - name: Install all platform variants (for static analysis)
+        run: |
+          set -euo pipefail
+          export PATH=/content/bin:$PATH
+          cd /content/oc
+          bun install --os="*" --cpu="*" --libc="*" @opentui/core@0.9.4 @opencode/pty@0.6.0 @number0/iroh@1.2.0
+
+      - name: Prepare (patches + plant android packages)
+        run: |
+          set -euo pipefail
+          export PATH=/content/bin:$PATH
+          OC=/content/oc \
+          OPENTUI_SO=/content/libopentui.bionic.so \
+          BUNPTY_SO="$GITHUB_WORKSPACE/work/native/librust_pty.so" \
+          WATCHER_DIR="$GITHUB_WORKSPACE/work/vendor/watcher/package" \
+          FFF_DIR="$GITHUB_WORKSPACE/work/vendor/fff/package" \
+          PTY_BIN="$GITHUB_WORKSPACE/work/vendor/pty/package/bin/opencode-pty" \
+          IROH_DIR="$GITHUB_WORKSPACE/work/vendor/iroh/package" \
+          OPENTUI_VERSION=0.9.4 \
+          python3 build/android-native/prepare.py
+
+      - name: Build (bun-linux-arm64-android)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export PATH=/content/bin:$PATH
+          cd /content/oc/packages/cli
+          OPENCODE_CHANNEL=latest OPENCODE_VERSION=2.4.1 OPENCODE_TARGET=android-arm64 \
+            BUN_COMPILE_RELEASE=bun-v1.4.5 bun run build --single --skip-install
+
+      - name: Locate + package
+        run: |
+          set -euo pipefail
+          BIN=$(find /content/oc/packages/cli/dist -type f -name opencode | head -1)
+          echo "BIN=$BIN"
+          test -n "$BIN"
+          file "$BIN"
+          ls -l "$BIN"
+          cp "$BIN" work/opencode-embedded
+          cd work
+          tar --zstd -cf opencode-embedded-2.4.1.tar.zst opencode-embedded
+          sha256sum opencode-embedded-2.4.1.tar.zst > opencode-embedded-2.4.1.tar.zst.sha256
+          cat opencode-embedded-2.4.1.tar.zst.sha256
+
+      - name: Download bionic rootfs
+        run: |
+          set -euo pipefail
+          R=https://github.com/anyelolordmerab-maker/termux-native/releases/download
+          curl -fsSL -o work/bionic.tgz "$R/toolchain/bionic-a14.tgz"
+          mkdir -p work/bionic && tar -xzf work/bionic.tgz -C work/bionic
+
+      - name: Install bionic as /system (Android-like layout)
+        run: |
+          set -euo pipefail
+          cd work
+          LINKER=$(find bionic -name linker64 | head -1)
+          LIBC=$(find bionic -name libc.so | head -1)
+          LIBDIR=$(dirname "$LIBC")
+          test -n "$LINKER" && test -n "$LIBC"
+          sudo mkdir -p /system/bin /system/lib64 /linkerconfig
+          sudo cp "$LINKER" /system/bin/linker64
+          sudo cp -a "$LIBDIR"/. /system/lib64/ || true
+          # copia TODAS las librerias del rootfs (liblog.so, libc++, etc.)
+          sudo find bionic -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -n {} /system/lib64/ \; 2>/dev/null || true
+          sudo chmod 755 /system/bin/linker64
+          sudo mkdir -p /data && sudo chmod 777 /data
+          ls -l /system/bin/linker64
+          file /system/bin/linker64
+
+      - name: ELF inspection
+        run: |
+          set -euo pipefail
+          cd work
+          file opencode-embedded
+          readelf -h opencode-embedded | egrep 'Class|Machine|Type|Entry'
+          echo '--- NEEDED ---'
+          readelf -d opencode-embedded | grep NEEDED || true
+          python3 - <<'PY'
+          d=open('opencode-embedded','rb').read()
+          print('size', len(d))
+          print('ELF_count', d.count(b'\x7fELF'))
+          for s in (b'libopentui', b'libfff_c', b'watcher.node', b'librust_pty', b'opencode-pty'):
+              print('has', s.decode(), s in d)
+          PY
+
+      - name: Run --version / --help (native)
+        run: |
+          set -euo pipefail
+          cd work
+          ./opencode-embedded --version 2>&1 | tee version.log
+          grep -q '2\.4\.1' version.log
+          ./opencode-embedded --help 2>&1 | tee help.log
+          grep -qi 'serve' help.log
+
+      - name: TUI standalone render (real pty)
+        run: |
+          set -euo pipefail
+          cd work
+          set +e
+          timeout 55 script -q -e -c "./opencode-embedded" /dev/null > tui.log 2>&1
+          echo "tui_exit=$?"
+          set -e
+          wc -c tui.log
+          ( find "$TMPDIR" "$XDG_CACHE_HOME" "$HOME" /tmp -type f \( -name 'libopentui*.so' -o -name 'opencode-pty*' -o -name '*opentui*.so' \) 2>/dev/null | head -20 ) || true
+          python3 - <<'PY'
+          import sys
+          d=open('tui.log','rb').read().decode('utf-8','replace')
+          bad=['Unsupported OpenTUI','Failed to initialize','Pointer exceeds','dlopen failed','Cannot find module','exited with code 127','EACCES','ENOENT','not supported on the current platform']
+          fail=False
+          for b in bad:
+              hit=b in d
+              print(('BAD ' if hit else 'ok  ')+b)
+              fail=fail or hit
+          has_esc='\x1b[' in d
+          print('has_escape', has_esc, 'bytes', len(d))
+          print('--- SAMPLE ---')
+          print(d[:1800])
+          if fail or not has_esc or len(d)<800:
+              print('TUI_TEST_FAIL'); sys.exit(1)
+          print('TUI_TEST_OK')
+          PY
+
+      - name: Serve HTTP + TUI over server
+        run: |
+          set -euo pipefail
+          cd work
+          ./opencode-embedded serve --hostname 127.0.0.1 --port 4517 > serve.log 2>&1 &
+          SRV=$!
+          ok=0
+          for i in $(seq 1 60); do
+            sleep 1
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4517/app || true)
+            if [ "$code" = "200" ]; then ok=1; break; fi
+          done
+          echo "serve_http_ok=$ok"
+          PW=$(grep 'server password ' serve.log | tail -1 | sed 's/.*server password //')
+          echo "pw_len=${#PW}"
+          if [ "$ok" != "1" ]; then echo "SERVE_FAIL"; kill $SRV 2>/dev/null || true; exit 1; fi
+          export OPENCODE_PASSWORD="$PW" OPENCODE_SERVER_PASSWORD="$PW"
+          set +e
+          timeout 40 script -q -e -c "./opencode-embedded --server http://127.0.0.1:4517" /dev/null > tui_srv.log 2>&1
+          echo "tui_srv_exit=$?"
+          set -e
+          kill $SRV 2>/dev/null || true
+          python3 - <<'PY'
+          import sys
+          d=open('tui_srv.log','rb').read().decode('utf-8','replace')
+          bad=['Unsupported OpenTUI','Failed to initialize','Pointer exceeds','dlopen failed','Cannot find module','requires a password','EACCES','not supported on the current platform']
+          fail=False
+          for b in bad:
+              hit=b in d
+              print(('BAD ' if hit else 'ok  ')+b)
+              fail=fail or hit
+          has_esc='\x1b[' in d
+          print('has_escape', has_esc, 'bytes', len(d))
+          if fail or len(d)<800:
+              print('TUI_SRV_FAIL'); sys.exit(1)
+          print('TUI_SRV_OK')
+          PY
+
+      - name: FFI tagged-pointer logic unit check
+        run: |
+          set -euo pipefail
+          cat > ffi_test.mjs <<'JS'
+          const POINTER_UNSAFE = 'Pointer exceeds safe integer range';
+          function toSafeNumberPointer(pointer) {
+            if (pointer > BigInt(Number.MAX_SAFE_INTEGER)) return pointer; /* OT_PTR_BIGINT */
+            return Number(pointer);
+          }
+          function assert(c, m){ if(!c){ console.error('FAIL:', m); process.exit(1);} }
+          const tagged = BigInt('0xb400000000000000');
+          const r1 = toSafeNumberPointer(tagged);
+          assert(typeof r1 === 'bigint', 'tagged must return bigint');
+          assert(r1 === tagged, 'tagged preserved');
+          const r2 = toSafeNumberPointer(BigInt('0x7f1234567890'));
+          assert(typeof r2 === 'number', 'normal must return number');
+          console.log('FFI_LOGIC_OK');
+          JS
+          export PATH=/content/bin:$PATH
+          bun ffi_test.mjs
+
+      - name: Device profile compatibility (exact phone clues)
+        run: |
+          set -euo pipefail
+          cd work
+          python3 - <<'PY'
+          import json, subprocess, re, sys
+          prof=json.load(open('../build/android-native/device-profile.json'))
+          dev=prof['device']; ref=prof['termux']['working_reference']
+          elf=open('opencode-embedded','rb').read()
+          M='AArch64'
+          h=subprocess.check_output(['readelf','-h','opencode-embedded'],text=True)
+          d=subprocess.check_output(['readelf','-d','opencode-embedded'],text=True)
+          l=subprocess.check_output(['readelf','-l','opencode-embedded'],text=True)
+          needed=set(re.findall(r'Shared library: \[([^\]]+)\]',d))
+          allowed=set(dev['system_lib64_has'])|{'libc++_shared.so'}
+          checks=[]
+          def ck(n,ok,info=''):
+              checks.append((n,ok)); print(('PASS ' if ok else 'FAIL ')+n+(' :: '+info if info else ''))
+          ck('machine_aarch64', M in h)
+          blob=h+chr(10)+l
+          ck('interp_system_bin_linker64', dev['linker'] in blob, dev['linker'])
+          ck('needed_subset_of_phone_libs', needed<=allowed, str(sorted(needed)))
+          ck('not_glibc_ld_linux', 'ld-linux' not in blob and 'ld-musl' not in blob)
+          ck('android_api_compat', dev['api']>=28, str(dev['api']))
+          for lib in (b'libopentui',b'libfff_c',b'watcher.node',b'librust_pty',b'opencode-pty'):
+              ck('embedded_'+lib.decode(), lib in elf)
+          ck('elf_count_9', elf.count(b'\x7fELF')>=9, str(elf.count(b'\x7fELF')))
+          bad=[n for n,ok in checks if not ok]
+          print('DEVICE_COMPAT pass=%d/%d'%(len(checks)-len(bad),len(checks)))
+          if bad: sys.exit(1)
+          PY
+          echo DEVICE_COMPAT_OK
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            work/*.log
+            work/opencode-embedded-2.4.1.tar.zst
+            work/opencode-embedded-2.4.1.tar.zst.sha256
+
+      - name: Publish release
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload opencode-v2.4.1 \
+            work/opencode-embedded-2.4.1.tar.zst \
+            work/opencode-embedded-2.4.1.tar.zst.sha256 \
+            --clobber
