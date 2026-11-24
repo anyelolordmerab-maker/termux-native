@@ -44,8 +44,13 @@ jobs:
           cd work
           awk '{n=split($NF,a,"/"); print $1 "  " a[n]}' "$T.sha256" > "$T.sha256.fixed"
           sha256sum -c "$T.sha256.fixed"
-          tar --zstd -xf "$T"
-          test -x check/package/bin/dsh
+          mkdir -p check
+          tar --zstd -xf "$T" -C check
+          if [ ! -x check/package/bin/dsh ]; then
+            echo "EXTRACT_FAIL: no apareció check/package/bin/dsh"
+            find check -maxdepth 2 | head -20
+            exit 1
+          fi
           node -e 'const j=require("./check/package/package.json");console.log("VERSION",j.name,j.version);if(j.name!=="dsh-termux")process.exit(1)'
 
       - name: Bionic rootfs -> /system
