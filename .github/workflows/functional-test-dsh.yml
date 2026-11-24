@@ -99,6 +99,8 @@ jobs:
           sudo mkdir -p "$PREFIX/bin"
           printf '#!/bin/sh\nexit 1\n' | sudo tee "$PREFIX/bin/rg" >/dev/null
           sudo chmod 755 "$PREFIX/bin/rg"
+          # tar restauró dueños/modos root; devolver lectura y ejecución al usuario
+          sudo chmod -R a+rX /data/data/com.termux/files
           NODE="$PREFIX/bin/node"
           echo "--- node prefix ---"
           ls -la "$PREFIX/bin" 2>&1 | head -20 || true
