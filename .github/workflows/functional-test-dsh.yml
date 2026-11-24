@@ -93,7 +93,7 @@ jobs:
             ar x pkg.deb
             DATA=$(ls data.tar.* 2>/dev/null | head -1)
             [ -n "$DATA" ] || { echo "sin data.tar en $rel"; exit 1; }
-            tar -xf "$DATA" -C /
+            sudo tar -xf "$DATA" -C /
           done
           # rg del paquete de Termux (el symlink del release apunta aquí)
           mkdir -p "$PREFIX/bin"
