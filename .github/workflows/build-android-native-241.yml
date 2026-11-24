@@ -48,7 +48,7 @@ jobs:
           echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-${ANDROID_NDK_LATEST_HOME:-}}" >> "$GITHUB_ENV"
           echo "--- preflight URLs ---"
           for u in \
-            "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz" \
+            "https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz" \
             "https://github.com/anomalyco/opentui.git" \
             "https://registry.npmjs.org/@opentui/core-linux-arm64-musl/-/core-linux-arm64-musl-0.9.4.tgz"; do
             curl -fsSI -o /dev/null "$u" || { echo "URL DOWN: $u"; exit 1; }
@@ -58,7 +58,7 @@ jobs:
           set -euo pipefail
           R="$GITHUB_WORKSPACE"
           mkdir -p "$R/out" "$R/work"
-          ZV=0.15.2
+          ZV=0.17.1
           curl -fsSL -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZV}/zig-x86_64-linux-${ZV}.tar.xz"
           tar -xf /tmp/zig.tar.xz -C /tmp
           export ZIG_BIN="/tmp/zig-x86_64-linux-${ZV}/zig"
