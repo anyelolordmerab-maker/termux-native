@@ -92,6 +92,10 @@ export XDG_CACHE_HOME="\$ROOT/home/.cache"
 export XDG_CONFIG_HOME="\$ROOT/home/.config"
 export XDG_STATE_HOME="\$ROOT/home/.local/state"
 export TMPDIR="\$ROOT/tmp"
+# No heredar nada del dsh 0.2.2-rc.1 ni del opencode 2.0.31.
+unset LD_LIBRARY_PATH OPENTUI_LIB_PATH OPENTUI_LIBC
+unset OPENCODE_SESSION_ID OPENCODE OPENCODE_TERMINAL AI_AGENT
+unset DSH_CONFIG DSH_PROFILE DSH_LOG_LEVEL
 export PATH="\$ROOT/app/bin:\$PREFIX/bin:\$PATH"
 mkdir -p "\$HOME" "\$XDG_DATA_HOME" "\$XDG_CACHE_HOME" "\$XDG_CONFIG_HOME" "\$XDG_STATE_HOME" "\$TMPDIR"
 exec "\$ROOT/app/bin/dsh" "\$@"
