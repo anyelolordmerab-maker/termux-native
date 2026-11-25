@@ -111,22 +111,31 @@ if [ "$MODE" = "isolated" ]; then
   mkdir -p "$DEST" "$HOME/.local/bin"
   cp -f "$BIN" "$DEST/opencode-embedded"
   chmod 700 "$DEST/opencode-embedded"
-  cat > "$HOME/.local/bin/opencode241" <<EOF
+  cat > "$HOME/.local/bin/oc241-aislado" <<EOF
 #!/data/data/com.termux/files/usr/bin/bash
-# Entorno 100% aislado: no lee ni escribe el HOME/XDG del opencode existente.
+# Lanzador AISLADO de opencode 2.4.1. Nunca toca \$PREFIX/bin/opencode (2.0.31).
+set -euo pipefail
 ROOT="$DEST"
+BIN="\$ROOT/opencode-embedded"
+[ -x "\$BIN" ] || { echo "ERROR: falta \$BIN" >&2; exit 1; }
 export HOME="\$ROOT/home"
 export XDG_DATA_HOME="\$ROOT/home/.local/share"
 export XDG_CACHE_HOME="\$ROOT/home/.cache"
 export XDG_CONFIG_HOME="\$ROOT/home/.config"
 export XDG_STATE_HOME="\$ROOT/home/.local/state"
 export TMPDIR="\$ROOT/tmp"
+export PATH="\$ROOT/home/.local/bin:/data/data/com.termux/files/usr/bin:/data/data/com.termux/files/usr/bin/applets"
+unset OPENTUI_LIB_PATH OPENTUI_LIBC OPENTUI_LIBRARY_PATH LD_LIBRARY_PATH
+unset OPENCODE_CONFIG OPENCODE_CONFIG_CONTENT OPENCODE_CONFIG_DIR
+unset OPENCODE_SESSION_ID OPENCODE OPENCODE_TERMINAL OPENCODE_SERVER AI_AGENT
 mkdir -p "\$HOME" "\$XDG_DATA_HOME" "\$XDG_CACHE_HOME" "\$XDG_CONFIG_HOME" "\$XDG_STATE_HOME" "\$TMPDIR"
-exec "\$ROOT/opencode-embedded" "\$@"
+cd "\$ROOT/home"
+exec "\$BIN" "\$@"
 EOF
-  chmod 700 "$HOME/.local/bin/opencode241"
+  chmod 700 "$HOME/.local/bin/oc241-aislado"
+  ln -sf "$HOME/.local/bin/oc241-aislado" "$HOME/.local/bin/opencode241"
   log "instalado en modo AISLADO"
-  log "comando: $HOME/.local/bin/opencode241"
+  log "comando: $HOME/.local/bin/oc241-aislado (alias opencode241)"
   log "NO se tocó \$PREFIX/bin/opencode ni tu configuración actual"
   log "agrega \$HOME/.local/bin al PATH si quieres invocarlo como opencode241"
 else
@@ -144,7 +153,7 @@ else
 fi
 
 if [ "$MODE" = "isolated" ]; then
-  FINAL="$HOME/.local/bin/opencode241"
+  FINAL="$HOME/.local/bin/oc241-aislado"
 else
   FINAL="$PREFIX/bin/opencode"
 fi
