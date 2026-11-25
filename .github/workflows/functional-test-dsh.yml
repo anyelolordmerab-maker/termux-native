@@ -133,6 +133,21 @@ jobs:
           grep -Rq "android-base" check/package/bin/bwrap && echo "PASS abwrap wrapper" || echo "WARN abwrap"
           echo NATIVE_BUNDLE_OK
 
+      - name: Patch flock para Android (sesiones)
+        run: |
+          set -euo pipefail
+          F=work/check/package/node_modules/@deepseek-ai/node-addon-system/lib/flock.js
+          python3 - "$F" <<'PY'
+          import sys
+          p = sys.argv[1]
+          s = open(p).read()
+          old = "    const { platform, arch } = process;\n    if (platform !== 'linux' && platform !== 'darwin') {\n"
+          new = "    const { platform, arch } = process;\n    if (platform === 'android') { return (binding = { tryLock(_fd, cb) { cb(0); } }); }\n    if (platform !== 'linux' && platform !== 'darwin') {\n"
+          assert old in s, "anchor flock"
+          open(p, 'w').write(s.replace(old, new, 1))
+          PY
+          echo FLOCK_PATCH_OK
+
       - name: Shim native + perfil aislado (reproducible)
         run: |
           set -euo pipefail
