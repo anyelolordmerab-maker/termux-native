@@ -80,16 +80,29 @@ if ! command -v zstd >/dev/null; then
   die "falta zstd: pkg install zstd"
 fi
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/oc241.XXXXXX")"
+CACHE="${HOME}/.cache/opencode-241"
+mkdir -p "$CACHE"
+TMP="$(mktemp -d "${TMPDIR:-$CACHE}/oc241.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
-log "descargando ${TAG} (un solo archivo comprimido)"
-curl -fL --retry 3 -o "$TMP/$ASSET" "$BASE/$ASSET"
-curl -fL --retry 3 -o "$TMP/$SHA" "$BASE/$SHA"
-( cd "$TMP" && sha256sum -c "$SHA" ) || die "sha256 no coincide; no se instala nada"
+dl() {
+  local url="$1" out="$2"
+  if [ -s "$out" ]; then
+    echo "[descarga] reanudando $(basename "$out") ($(stat -c%s "$out") bytes ya bajados)"
+    curl -fL --retry 5 --retry-delay 2 -C - -o "$out" "$url" || echo "[descarga] aviso: reanudación no aplicable; verifico sha"
+  else
+    echo "[descarga] iniciando $(basename "$out")"
+    curl -fL --retry 5 --retry-delay 2 -o "$out" "$url"
+  fi
+}
+
+log "descargando ${TAG} (un solo archivo comprimido, reanudable)"
+dl "$BASE/$ASSET" "$CACHE/$ASSET"
+dl "$BASE/$SHA" "$CACHE/$SHA"
+( cd "$CACHE" && sha256sum -c "$SHA" ) || die "sha256 no coincide; no se instala nada"
 
 mkdir -p "$TMP/x"
-tar --zstd -xf "$TMP/$ASSET" -C "$TMP/x"
+tar --zstd -xf "$CACHE/$ASSET" -C "$TMP/x"
 BIN="$TMP/x/opencode-embedded"
 [ -x "$BIN" ] || die "el archive no trae opencode-embedded ejecutable"
 file "$BIN" 2>/dev/null | grep -q 'ELF.*aarch64\|ARM aarch64' || log "aviso: file no reconoció aarch64 (seguimos con sha verificado)"
