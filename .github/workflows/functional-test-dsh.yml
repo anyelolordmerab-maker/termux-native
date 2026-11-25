@@ -178,6 +178,35 @@ jobs:
           qemu-aarch64-static -L / "$NODE" --expose-internals "$JS" --from-default-profile web --profile tui --dump-config > profile.log 2>&1 || { cat profile.log; exit 1; }
           echo PROFILE_OK
 
+      - name: Plugin Our Free Model (OpenCode Zen)
+        run: |
+          set -euo pipefail
+          cd work
+          R=https://github.com/Ebony-Vinyl/dsh-our-free-model/releases/download/v2.9.0
+          curl -fsSL -o ofm.tgz "$R/dsh-our-free-model-2.9.0.tgz"
+          curl -fsSL -o SHA256SUMS "$R/SHA256SUMS"
+          grep 'dsh-our-free-model-2.9.0.tgz' SHA256SUMS | sed 's/dsh-our-free-model-2.9.0.tgz/ofm.tgz/' > ofm.sha
+          sha256sum -c ofm.sha
+          P=check/package/node_modules/@ebony-vinyl/dsh-our-free-model
+          mkdir -p "$P"
+          tar -xzf ofm.tgz -C "$P" --strip-components=1
+          python3 - "$HOME/.dsh/profiles/tui/package.json" <<'PY'
+          import json,sys
+          p=sys.argv[1]
+          d=json.load(open(p))
+          b=d.setdefault("dsh",{}).setdefault("profile",{}).setdefault("bundles",[])
+          n="@ebony-vinyl/dsh-our-free-model"
+          if n not in b: b.append(n)
+          json.dump(d,open(p,"w"),indent=2)
+          PY
+          export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
+          export PATH=/data/data/com.termux/files/usr/bin:$PATH
+          NODE=/data/data/com.termux/files/usr/bin/node
+          JS=check/package/node_modules/@deepseek-ai/dsh/lib/bin.js
+          qemu-aarch64-static -L / "$NODE" --expose-internals "$JS" --profile tui --dump-config > ofm-dump.log 2>&1
+          grep -qi 'our-free-model' ofm-dump.log || { cat ofm-dump.log; exit 1; }
+          echo OFM_OK
+
       - name: DSH version/help (motor real)
         run: |
           set -euo pipefail
