@@ -133,6 +133,36 @@ jobs:
           grep -Rq "android-base" check/package/bin/bwrap && echo "PASS abwrap wrapper" || echo "WARN abwrap"
           echo NATIVE_BUNDLE_OK
 
+      - name: Shim native + perfil aislado (reproducible)
+        run: |
+          set -euo pipefail
+          cd work
+          D=check/package/node_modules/node-addon-require-builtin-android-arm64
+          mkdir -p "$D"
+          printf '{"name":"node-addon-require-builtin-android-arm64","version":"0.1.10","main":"index.js"}\n' > "$D/package.json"
+          cat > "$D/index.js" <<'EOF'
+          'use strict';
+          const ALLOWED = new Set([
+            "internal/modules/esm/loader", "internal/modules/cjs/loader",
+            "internal/modules/helpers", "internal/modules/esm/utils",
+            "internal/modules/esm/resolve",
+          ]);
+          const isAllowedInternalId = (id) => ALLOWED.has(id) || (typeof id === "string" && id.startsWith("internal/"));
+          const requireBuiltin = (id) => {
+            if (!isAllowedInternalId(id)) throw new Error("builtin no permitido: " + id);
+            return require(id);
+          };
+          const getNativeBindingInfo = () => ({ mode: "js-shim", product: "require-builtin", backend: "napi", abi: "napi-v9" });
+          module.exports = { requireBuiltin, isAllowedInternalId, getNativeBindingInfo };
+          module.exports.default = module.exports;
+          EOF
+          export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
+          export PATH=/data/data/com.termux/files/usr/bin:$PATH
+          NODE=/data/data/com.termux/files/usr/bin/node
+          JS=check/package/node_modules/@deepseek-ai/dsh/lib/bin.js
+          qemu-aarch64-static -L / "$NODE" --expose-internals "$JS" --from-default-profile web --profile tui --dump-config > profile.log 2>&1 || { cat profile.log; exit 1; }
+          echo PROFILE_OK
+
       - name: DSH version/help (motor real)
         run: |
           set -euo pipefail
