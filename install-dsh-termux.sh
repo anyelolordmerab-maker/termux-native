@@ -83,6 +83,18 @@ ROOT_SRC="$TMP/x/package"
 if [ "$MODE" = "isolated" ]; then
   mkdir -p "$DEST" "$HOME/.local/bin"
   cp -a "$ROOT_SRC" "$DEST/app"
+  # Android no tiene flock(2): DSH corre una sola instancia aislada, asi que el
+  # lock de sesion se stubbea como exito (igual que el worker del navegador).
+  F="$DEST/app/node_modules/@deepseek-ai/node-addon-system/lib/flock.js"
+  python3 - "$F" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "    const { platform, arch } = process;\n    if (platform !== 'linux' && platform !== 'darwin') {\n"
+new = "    const { platform, arch } = process;\n    if (platform === 'android') { return (binding = { tryLock(_fd, cb) { cb(0); } }); }\n    if (platform !== 'linux' && platform !== 'darwin') {\n"
+assert old in s, "anchor flock"
+open(p, 'w').write(s.replace(old, new, 1))
+PY
   cat > "$HOME/.local/bin/dsh241" <<EOF
 #!/data/data/com.termux/files/usr/bin/bash
 ROOT="$DEST"
